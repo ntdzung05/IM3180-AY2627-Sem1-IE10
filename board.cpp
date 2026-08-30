@@ -150,10 +150,17 @@ bool Board::valid_move(int old_x, int old_y, int new_x, int new_y){
     int dy = new_y - old_y;
     
     if(piece == 3 || piece == -3 || piece == 4 || piece == -4 || piece == 5 || piece == -5){
-        int step_x = (dx > 0) - (dx < 0);
-        int step_y = (dy > 0) - (dy < 0);
+    int step_x = (dx > 0) - (dx < 0);
+    int step_y = (dy > 0) - (dy < 0);
+
         for(int i = 1; i < std::max(std::abs(dx), std::abs(dy)); ++i){
-            if(current_board[old_x + i * step_x][old_y + i * step_y] != 0) return false;
+
+            int check_x = old_x + i * step_x;
+            int check_y = old_y + i * step_y;
+
+            if(!inboard(check_x, check_y)) return false;
+
+            if(current_board[check_x][check_y] != 0) return false;
         }
     }
 
