@@ -511,13 +511,19 @@ void ChessUI::handleEvents() {
                             matchHistoryScroll = 0.f;
                             currentScreen = accountReturnScreen;
                         }
+<<<<<<< HEAD
                         else if (mouseX >= 500.f && mouseX <= 700.f && mouseY >= 585.f && mouseY <= 629.f) {
+=======
+                        else if (mouseX >= 500.f && mouseX <= 700.f &&
+                                 mouseY >= 585.f && mouseY <= 629.f) {
+>>>>>>> 8fd8e072799f2eddd740f9df2efbb218d6c1a82c
                             profilePicturePickerOpen = false;
                             currentScreen = accountReturnScreen;
                         }
                         continue;
                     }
 
+<<<<<<< HEAD
                     if (mouseX >= 370.f && mouseX <= 830.f && mouseY >= 250.f && mouseY <= 304.f) {
                         accountPasswordField = false;
                     }
@@ -532,13 +538,39 @@ void ChessUI::handleEvents() {
                         submitAccountForm();
                     }
                     else if (mouseX >= 500.f && mouseX <= 700.f && mouseY >= 620.f && mouseY <= 670.f) {
+=======
+                    if (mouseX >= 370.f && mouseX <= 830.f &&
+                        mouseY >= 250.f && mouseY <= 304.f) {
+                        accountPasswordField = false;
+                    }
+                    else if (mouseX >= 370.f && mouseX <= 830.f &&
+                             mouseY >= 349.f && mouseY <= 403.f) {
+                        accountPasswordField = true;
+                    }
+                    else if (mouseX >= 370.f && mouseX <= 830.f &&
+                             mouseY >= 425.f && mouseY <= 473.f) {
+                        accountSignUpMode = !accountSignUpMode;
+                        accountMessage.clear();
+                    }
+                    else if (mouseX >= 430.f && mouseX <= 770.f &&
+                             mouseY >= 530.f && mouseY <= 586.f) {
+                        submitAccountForm();
+                    }
+                    else if (mouseX >= 500.f && mouseX <= 700.f &&
+                             mouseY >= 620.f && mouseY <= 670.f) {
+>>>>>>> 8fd8e072799f2eddd740f9df2efbb218d6c1a82c
                         currentScreen = accountReturnScreen;
                     }
                     continue;
                 }
 
                 if (currentScreen == Screen::MatchHistory) {
+<<<<<<< HEAD
                     if (mouseX >= 500.f && mouseX <= 700.f && mouseY >= 665.f && mouseY <= 720.f) {
+=======
+                    if (mouseX >= 500.f && mouseX <= 700.f &&
+                        mouseY >= 665.f && mouseY <= 720.f) {
+>>>>>>> 8fd8e072799f2eddd740f9df2efbb218d6c1a82c
                         currentScreen = matchHistoryReturnScreen;
                     }
                     continue;
@@ -556,22 +588,42 @@ void ChessUI::handleEvents() {
                 }
 
                 if (currentScreen == Screen::MainMenu) {
+<<<<<<< HEAD
                     if (mouseX >= 440.f && mouseX <= 760.f && mouseY >= 220.f && mouseY <= 280.f) {
+=======
+                    if (mouseX >= 440.f && mouseX <= 760.f &&
+                        mouseY >= 220.f && mouseY <= 280.f) {
+>>>>>>> 8fd8e072799f2eddd740f9df2efbb218d6c1a82c
                         playSound(uiClickSoundBuffer);
                         startGame(-1, GameMode::PlayerVsPlayer);
                     }
 
+<<<<<<< HEAD
                     else if (mouseX >= 440.f && mouseX <= 760.f && mouseY >= 288.f && mouseY <= 348.f) {
+=======
+                    else if (mouseX >= 440.f && mouseX <= 760.f &&
+                             mouseY >= 288.f && mouseY <= 348.f) {
+>>>>>>> 8fd8e072799f2eddd740f9df2efbb218d6c1a82c
                         playSound(uiClickSoundBuffer);
                         currentScreen = Screen::ChooseSide;
                     }
 
+<<<<<<< HEAD
                     else if (mouseX >= 440.f && mouseX <= 760.f && mouseY >= 356.f && mouseY <= 416.f) {
+=======
+                    else if (mouseX >= 440.f && mouseX <= 760.f &&
+                             mouseY >= 356.f && mouseY <= 416.f) {
+>>>>>>> 8fd8e072799f2eddd740f9df2efbb218d6c1a82c
                         playSound(uiClickSoundBuffer);
                         startGame(-1, GameMode::EngineVsEngine);
                     }
 
+<<<<<<< HEAD
                     else if (mouseX >= 440.f && mouseX <= 760.f && mouseY >= 424.f && mouseY <= 484.f) {
+=======
+                    else if (mouseX >= 440.f && mouseX <= 760.f &&
+                             mouseY >= 424.f && mouseY <= 484.f) {
+>>>>>>> 8fd8e072799f2eddd740f9df2efbb218d6c1a82c
                         playSound(uiClickSoundBuffer);
                         previousScreen = Screen::MainMenu;
                         settingsTab = 0;
@@ -630,17 +682,32 @@ void ChessUI::handleEvents() {
                 }
 
                 if (currentScreen == Screen::Settings) {
+<<<<<<< HEAD
                     if (mouseX >= 28.f && mouseX <= 64.f && mouseY >= 30.f && mouseY <= 78.f) {
+=======
+                    if (mouseX >= 28.f && mouseX <= 64.f &&
+                        mouseY >= 30.f && mouseY <= 78.f) {
+>>>>>>> 8fd8e072799f2eddd740f9df2efbb218d6c1a82c
                         playSound(uiClickSoundBuffer);
                         currentScreen = previousScreen;
                     }
 
+<<<<<<< HEAD
                     else if (mouseX >= 812.f && mouseX <= 952.f && mouseY >= 42.f && mouseY <= 80.f) {
+=======
+                    else if (mouseX >= 812.f && mouseX <= 952.f &&
+                        mouseY >= 42.f && mouseY <= 80.f) {
+>>>>>>> 8fd8e072799f2eddd740f9df2efbb218d6c1a82c
                         playSound(uiClickSoundBuffer);
                         settingsTab = 0;
                     }
 
+<<<<<<< HEAD
                     else if (mouseX >= 962.f && mouseX <= 1102.f && mouseY >= 42.f && mouseY <= 80.f) {
+=======
+                    else if (mouseX >= 962.f && mouseX <= 1102.f &&
+                             mouseY >= 42.f && mouseY <= 80.f) {
+>>>>>>> 8fd8e072799f2eddd740f9df2efbb218d6c1a82c
                         playSound(uiClickSoundBuffer);
                         settingsTab = 1;
                         refreshPieceThemes();
@@ -649,7 +716,12 @@ void ChessUI::handleEvents() {
 
                     else if (settingsTab == 0) {
                         auto clickedGameplayRow = [&](float y) {
+<<<<<<< HEAD
                             return mouseX >= 290.f && mouseX <= 910.f && mouseY >= y && mouseY <= y + 48.f;
+=======
+                            return mouseX >= 290.f && mouseX <= 910.f &&
+                                   mouseY >= y && mouseY <= y + 48.f;
+>>>>>>> 8fd8e072799f2eddd740f9df2efbb218d6c1a82c
                         };
 
                         if (clickedGameplayRow(220.f)) {
@@ -752,7 +824,12 @@ void ChessUI::handleEvents() {
                     }
 
                     if (gameStarted &&
+<<<<<<< HEAD
                         mouseX >= 350.f && mouseX <= 500.f && mouseY >= 662.f && mouseY <= 704.f) {
+=======
+                        mouseX >= 350.f && mouseX <= 500.f &&
+                        mouseY >= 662.f && mouseY <= 704.f) {
+>>>>>>> 8fd8e072799f2eddd740f9df2efbb218d6c1a82c
                         playSound(uiClickSoundBuffer);
                         int engineSide = game.get_engine_side();
                         GameMode mode = gameMode;
