@@ -7,6 +7,7 @@
 #include <vector>
 #include <string>
 #include <optional>
+#include <functional>
 
 struct MoveHistoryEntry {
     int piece;
@@ -19,20 +20,49 @@ struct MoveHistoryEntry {
 
     int capturedPiece;
 
+    int promotionPiece = 0;
+
     Board boardAfterMove;
 };
 
 class ChessUI {
 
 public:
+    struct MatchSummary {
+        std::string white;
+        std::string black;
+        std::string result;
+        std::string date;
+    };
+
+    using AuthHandler = std::function<bool(
+        const std::string&, const std::string&, bool)>;
+    using MatchHistoryProvider = std::function<std::vector<MatchSummary>()>;
+
     explicit ChessUI(int engineSide = 0, int searchDepth = 2);
     void run();
+
+    void setAuthHandler(AuthHandler handler) { authHandler = std::move(handler); }
+    void setLogoutHandler(std::function<void()> handler) { logoutHandler = std::move(handler); }
+    void setMatchHistory(std::vector<MatchSummary> matches) {
+        matchSummaries = std::move(matches);
+        matchHistoryMessage.clear();
+        matchHistoryScroll = 0.f;
+    }
+    void setMatchHistoryProvider(MatchHistoryProvider provider) {
+        matchHistoryProvider = std::move(provider);
+        matchHistoryMessage.clear();
+        matchHistoryScroll = 0.f;
+    }
 
 private:
     Board game;
     sf::RenderWindow window;
 
-    enum class Screen {StartScreen, MainMenu, ChooseSide, Game, Settings, EndGame};
+    enum class Screen {
+        StartScreen, MainMenu, ChooseSide, Game, Promotion,
+        Settings, EndGame, Account, MatchHistory
+    };
 
     enum class GameMode {
         PlayerVsPlayer,
@@ -53,9 +83,29 @@ private:
 
     Screen currentScreen = Screen::StartScreen;
     Screen previousScreen = Screen::MainMenu;
+    Screen accountReturnScreen = Screen::MainMenu;
+    Screen matchHistoryReturnScreen = Screen::MainMenu;
     GameMode gameMode = GameMode::PlayerVsPlayer;
     HistoryStyle historyStyle = HistoryStyle::Pictogram;
-    int engineFrameDelay = 0;
+
+    sf::Clock engineMoveClock;
+    sf::Clock engineAnimationClock;
+    bool engineMoveWaiting = false;
+    bool engineMoveAnimating = false;
+    int animatedFromRow = -1;
+    int animatedFromCol = -1;
+    int animatedToRow = -1;
+    int animatedToCol = -1;
+    int animatedPiece = 0;
+    bool slidePieces = true;
+    bool fullscreen = false;
+    const float engineMoveDelaySeconds = 0.5f;
+    const float engineSlideSeconds = 0.3f;
+
+    int promotionFromRow = -1;
+    int promotionFromCol = -1;
+    int promotionToRow = -1;
+    int promotionToCol = -1;
 
     bool dragPieces = true;
     bool showPossibleMoves = true;
@@ -76,6 +126,26 @@ private:
     bool showCoordinates = true;
     bool soundEffects = true;
     bool historyPaused = false;
+    bool accountSignUpMode = false;
+    bool accountPasswordField = false;
+    bool accountSignedIn = false;
+    bool profilePicturePickerOpen = false;
+    std::string accountName;
+    std::string accountInput;
+    std::string accountPassword;
+    std::string accountMessage;
+    std::string profilePicturePath;
+    std::vector<std::string> profilePictureOptions;
+    std::vector<sf::Texture> profilePictureOptionTextures;
+    float profilePicturePickerScroll = 0.f;
+    sf::Texture profilePictureTexture;
+    AuthHandler authHandler;
+    std::function<void()> logoutHandler;
+    std::vector<MatchSummary> matchSummaries;
+    std::string matchHistoryMessage;
+    MatchHistoryProvider matchHistoryProvider;
+    float matchHistoryScroll = 0.f;
+    sf::View logicalView;
 
     std::vector<std::string> pieceThemeFolders;
     std::vector<sf::Texture> pieceThemeKings;
@@ -134,7 +204,16 @@ private:
     void loadPieceTextures();
     void handleEvents();
     void updateEngine();
-    bool applyMove(int fromRow, int fromCol, int toRow, int toCol);
+    bool applyMove(int fromRow, int fromCol, int toRow, int toCol, int promotionPiece = 0);
+    void updateResponsiveView(unsigned int width, unsigned int height);
+    void toggleFullscreen();
+    void drawLastMoveHighlights();
+    void drawProfileButton();
+    void drawAccountScreen();
+    void drawProfilePicturePicker();
+    void drawMatchHistoryScreen();
+    void submitAccountForm();
+    void loadProfilePictureOptions();
     void draw();
     void drawPieces();
     void drawBoard();
@@ -148,6 +227,7 @@ private:
     void drawGameplaySettings();
     void drawDesignSettings();
     void drawEndScreen();
+    void drawPromotionDialog();
     void drawCapturedPieces();
     void drawCoordinates();
     void refreshPieceThemes();
@@ -157,7 +237,6 @@ private:
     bool isBoardFlipped() const;
     int displayRow(int row) const;
     int displayCol(int col) const;
-    void drawHistoryTree();
     std::vector<sf::Vector2f> getHistoryNodePositions() const;
     int getHistoryDepth(int nodeIndex) const;
     void drawMoveArrow(const MoveHistoryEntry& move);
