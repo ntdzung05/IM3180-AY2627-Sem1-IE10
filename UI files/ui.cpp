@@ -1,12 +1,34 @@
 #include "ui.hpp"
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <cstdio>
 #include <filesystem>
 #include <iomanip>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+
+namespace {
+bool gLightMode = false;
+
+// Maps the dark-theme greys to light-theme greys; saturated and translucent colours are kept.
+sf::Color textWhite() {
+    return gLightMode ? sf::Color(25, 25, 28) : sf::Color::White;
+}
+
+sf::Color uiColor(int r, int g, int b, int a = 255) {
+    sf::Color c(static_cast<std::uint8_t>(r), static_cast<std::uint8_t>(g),
+                static_cast<std::uint8_t>(b), static_cast<std::uint8_t>(a));
+    if (!gLightMode || a < 255)
+        return c;
+    if (std::max({r, g, b}) - std::min({r, g, b}) > 24)
+        return c;
+    return sf::Color(static_cast<std::uint8_t>(255 - r), static_cast<std::uint8_t>(255 - g),
+                     static_cast<std::uint8_t>(255 - b), 255);
+}
+}
 
 namespace {
 constexpr float topFlipX = 740.f;
@@ -74,7 +96,46 @@ void ChessUI::run() {
         handleEvents();
         if (!window.isOpen()) break;
         draw();
+        updateClocks();
         updateEngine();
+    }
+}
+
+void ChessUI::updateClocks() {
+    float dt = clockTimer.restart().asSeconds();
+    if (dt > 5.f)
+        dt = 5.f;
+
+    if (currentScreen != Screen::Game || !gameStarted ||
+        game.has_game_ended() || historyPaused || timeExpired ||
+        gameMode == GameMode::EngineVsEngine)
+        return;
+
+    int side = game.get_current_turn();
+
+    if (clockKeyNode != currentHistoryNode ||
+        clockKeyTurn != side ||
+        clockKeyMovesLeft != game.get_moves_left()) {
+        clockKeyNode = currentHistoryNode;
+        clockKeyTurn = side;
+        clockKeyMovesLeft = game.get_moves_left();
+        moveTimeLeft = matchSeconds;
+        return;
+    }
+
+    float& left = moveTimeLeft;
+    left -= dt;
+
+    if (left <= 0.f) {
+        left = 0.f;
+        timeExpired = true;
+        timeoutLoser = side;
+        engineMoveAnimating = false;
+        animatedPiece = 0;
+        dragging = false;
+        clearSelection();
+        playSound(victorySoundBuffer);
+        currentScreen = Screen::EndGame;
     }
 }
 
@@ -320,7 +381,8 @@ void ChessUI::toggleFullscreen() {
 void ChessUI::handleEvents() {
     while (const std::optional event = window.pollEvent()) {
         if (const auto* resized = event->getIf<sf::Event::Resized>()) {
-            updateResponsiveView(resized->size.x, resized->size.y);
+            static_cast<void>(resized);
+            updateResponsiveView(window.getSize().x, window.getSize().y);
         }
 
         if (const auto* keyPressed = event->getIf<sf::Event::KeyPressed>()) {
@@ -761,55 +823,24 @@ void ChessUI::handleEvents() {
                             continue;
                         }
 
+                        else if (clickedGameplayRow(598.f)) {
+                            playSound(uiClickSoundBuffer);
+                            gLightMode = !gLightMode;
+                        }
+
                     }
 
                     else {
-                        const float pieceCardWidth = 90.f;
-                        const float pieceCardHeight = 82.f;
-                        const float pieceGapX = 18.f;
-                        const float pieceStartX = 285.f;
-                        const float pieceStartY = 245.f;
-                        const int pieceColumns = 6;
-
                         for (int i = 0; i < static_cast<int>(pieceThemeFolders.size()); i++) {
-                            int row = i / pieceColumns;
-                            int col = i % pieceColumns;
+                            const float x = 290.f + i * 157.f;
+                            const float y = 235.f;
 
-                            float x = pieceStartX + col * (pieceCardWidth + pieceGapX);
-                            float y = pieceStartY + row * 92.f;
-
-                            if (y + pieceCardHeight > 400.f)
-                                break;
-
-                            if (mouseX >= x && mouseX <= x + pieceCardWidth && mouseY >= y && mouseY <= y + pieceCardHeight) {
+                            if (mouseX >= x && mouseX <= x + 148.f &&
+                                mouseY >= y && mouseY <= y + 290.f) {
                                 playSound(uiClickSoundBuffer);
                                 pieceTheme = i;
-                                loadPieceTextures();
-                                break;
-                            }
-                        }
-
-                        const float boardCardWidth = 90.f;
-                        const float boardCardHeight = 82.f;
-                        const float boardGapX = 18.f;
-                        const float boardStartX = 285.f;
-                        const float boardStartY = 470.f;
-                        const int boardColumns = 6;
-
-                        for (int i = 0; i < static_cast<int>(boardThemeFolders.size()); i++) {
-                            int row = i / boardColumns;
-                            int col = i % boardColumns;
-
-                            float x = boardStartX + col * (boardCardWidth + boardGapX);
-                            float y = boardStartY + row * 92.f;
-
-                            if (y + boardCardHeight > 625.f)
-                                break;
-
-                            if (mouseX >= x && mouseX <= x + boardCardWidth &&
-                                mouseY >= y && mouseY <= y + boardCardHeight) {
-                                playSound(uiClickSoundBuffer);
                                 boardTheme = i;
+                                loadPieceTextures();
                                 loadBoardTextures();
                                 break;
                             }
@@ -1048,8 +1079,8 @@ void ChessUI::handleEvents() {
 }
 
 void ChessUI::draw() {
-    window.setView(logicalView);
-    window.clear(sf::Color(30, 30, 30));
+    updateResponsiveView(window.getSize().x, window.getSize().y);
+    window.clear(uiColor(30, 30, 30));
 
     if (currentScreen == Screen::StartScreen) {
         drawStartScreen();
@@ -1100,6 +1131,7 @@ void ChessUI::draw() {
         drawCapturedPieces();
         drawSidePanel();
         drawText();
+        drawClocks();
         drawMoveHistory();
         drawEndScreen();
         drawProfileButton();
@@ -1123,7 +1155,7 @@ void ChessUI::draw() {
             static_cast<float>(boardY + displayRow(selectedRow) * squareSize + 3)
         });
         selectedSquare.setFillColor(sf::Color::Transparent);
-        selectedSquare.setOutlineColor(sf::Color(255, 215, 0));
+        selectedSquare.setOutlineColor(uiColor(255, 215, 0));
         selectedSquare.setOutlineThickness(4.f);
         window.draw(selectedSquare);
     }
@@ -1133,38 +1165,39 @@ void ChessUI::draw() {
 
     drawSidePanel();
     drawText();
+    drawClocks();
     drawMoveHistory();
 
     sf::RectangleShape flipButton({74.f, 36.f});
     flipButton.setPosition({topFlipX, 20.f});
-    flipButton.setFillColor(sf::Color(60, 60, 60));
+    flipButton.setFillColor(uiColor(60, 60, 60));
     window.draw(flipButton);
 
     sf::Text flipText(font, "FLIP", 13);
     flipText.setPosition({topFlipX + 22.f, 29.f});
-    flipText.setFillColor(sf::Color::White);
+    flipText.setFillColor(textWhite());
     window.draw(flipText);
 
     if (historyPaused) {
         sf::RectangleShape playButton({70.f, 36.f});
         playButton.setPosition({topPlayX, 20.f});
-        playButton.setFillColor(sf::Color(70, 120, 75));
+        playButton.setFillColor(uiColor(70, 120, 75));
         window.draw(playButton);
 
         sf::Text playText(font, "PLAY", 13);
         playText.setPosition({topPlayX + 20.f, 29.f});
-        playText.setFillColor(sf::Color::White);
+        playText.setFillColor(textWhite());
         window.draw(playText);
     }
 
     sf::RectangleShape settingsButton({160.f, 36.f});
     settingsButton.setPosition({topSettingsX, 20.f});
-    settingsButton.setFillColor(sf::Color(60, 60, 60));
+    settingsButton.setFillColor(uiColor(60, 60, 60));
     window.draw(settingsButton);
 
     sf::Text settingsText(font, "SETTINGS", 15);
     settingsText.setPosition({topSettingsX + 40.f, 28.f});
-    settingsText.setFillColor(sf::Color::White);
+    settingsText.setFillColor(textWhite());
     window.draw(settingsText);
 
     if (currentScreen == Screen::Promotion)
@@ -1177,13 +1210,13 @@ void ChessUI::draw() {
 
 void ChessUI::drawPromotionDialog() {
     sf::RectangleShape overlay({static_cast<float>(windowWidth), static_cast<float>(windowHeight)});
-    overlay.setFillColor(sf::Color(0, 0, 0, 175));
+    overlay.setFillColor(uiColor(0, 0, 0, 175));
     window.draw(overlay);
 
     sf::RectangleShape dialog({520.f, 180.f});
     dialog.setPosition({340.f, 310.f});
-    dialog.setFillColor(sf::Color(38, 38, 38));
-    dialog.setOutlineColor(sf::Color(220, 220, 220));
+    dialog.setFillColor(uiColor(38, 38, 38));
+    dialog.setOutlineColor(uiColor(220, 220, 220));
     dialog.setOutlineThickness(2.f);
     window.draw(dialog);
 
@@ -1204,8 +1237,8 @@ void ChessUI::drawPromotionDialog() {
         const bool hovered = mousePosition.x >= x && mousePosition.x <= x + 84.f &&
             mousePosition.y >= y && mousePosition.y <= y + 84.f;
         option.setFillColor(hovered
-            ? sf::Color(105, 91, 55) : sf::Color(70, 70, 70));
-        option.setOutlineColor(sf::Color(210, 190, 120));
+            ? uiColor(105, 91, 55) : uiColor(70, 70, 70));
+        option.setOutlineColor(uiColor(210, 190, 120));
         option.setOutlineThickness(2.f);
         window.draw(option);
 
@@ -1246,24 +1279,24 @@ void ChessUI::drawStartScreen() {
     drawCoverTexture(startBackgroundTexture);
 
     sf::RectangleShape darkOverlay({1200.f, 800.f});
-    darkOverlay.setFillColor(sf::Color(0, 0, 0, 55));
+    darkOverlay.setFillColor(uiColor(0, 0, 0, 55));
     window.draw(darkOverlay);
 
     sf::Text title(font, "CHESS", 64);
     title.setPosition({500.f, 105.f});
-    title.setFillColor(sf::Color::White);
+    title.setFillColor(textWhite());
     window.draw(title);
 
     sf::RectangleShape startButton({320.f, 75.f});
     startButton.setPosition({440.f, 250.f});
-    startButton.setFillColor(sf::Color(20, 20, 20, 205));
-    startButton.setOutlineColor(sf::Color(220, 220, 220));
+    startButton.setFillColor(uiColor(20, 20, 20, 205));
+    startButton.setOutlineColor(uiColor(220, 220, 220));
     startButton.setOutlineThickness(2.f);
     window.draw(startButton);
 
     sf::Text startText(font, "START", 28);
     startText.setPosition({550.f, 270.f});
-    startText.setFillColor(sf::Color::White);
+    startText.setFillColor(textWhite());
     window.draw(startText);
 }
 
@@ -1297,8 +1330,8 @@ void ChessUI::drawProfileButton() {
     if (accountSignedIn) {
         sf::CircleShape signedInDot(4.f);
         signedInDot.setPosition({topProfileX + 41.f, 52.f});
-        signedInDot.setFillColor(sf::Color(90, 190, 105));
-        signedInDot.setOutlineColor(sf::Color(18, 20, 22));
+        signedInDot.setFillColor(uiColor(90, 190, 105));
+        signedInDot.setOutlineColor(uiColor(18, 20, 22));
         signedInDot.setOutlineThickness(1.f);
         window.draw(signedInDot);
     }
@@ -1310,12 +1343,12 @@ void ChessUI::drawMainMenu() {
     drawCoverTexture(selectionFrameTexture);
 
     sf::RectangleShape darkOverlay({1200.f, 800.f});
-    darkOverlay.setFillColor(sf::Color(0, 0, 0, 95));
+    darkOverlay.setFillColor(uiColor(0, 0, 0, 95));
     window.draw(darkOverlay);
 
     sf::Text title(font, "MAIN MENU", 42);
     title.setPosition({495.f, 105.f});
-    title.setFillColor(sf::Color::White);
+    title.setFillColor(textWhite());
     window.draw(title);
 
     const float buttonWidth = 300.f;
@@ -1334,14 +1367,14 @@ void ChessUI::drawMainMenu() {
         const float y = firstY + stepY * i;
         sf::RectangleShape button({buttonWidth, buttonHeight});
         button.setPosition({buttonX, y});
-        button.setFillColor(sf::Color(20, 20, 20, 210));
-        button.setOutlineColor(sf::Color(210, 210, 210));
+        button.setFillColor(uiColor(20, 20, 20, 210));
+        button.setOutlineColor(uiColor(210, 210, 210));
         button.setOutlineThickness(1.f);
         window.draw(button);
 
         sf::Text label(font, labels[i], 19);
         label.setPosition({buttonX + 30.f, y + 17.f});
-        label.setFillColor(sf::Color::White);
+        label.setFillColor(textWhite());
         window.draw(label);
     }
 }
@@ -1349,7 +1382,7 @@ void ChessUI::drawMainMenu() {
 void ChessUI::drawChooseSide() {
     sf::Text title(font, "CHOOSE YOUR SIDE", 42);
     title.setPosition({390.f, 140.f});
-    title.setFillColor(sf::Color::White);
+    title.setFillColor(textWhite());
     window.draw(title);
 
     const float buttonWidth = 320.f;
@@ -1358,101 +1391,101 @@ void ChessUI::drawChooseSide() {
 
     sf::RectangleShape whiteButton({buttonWidth, buttonHeight});
     whiteButton.setPosition({buttonX, 300.f});
-    whiteButton.setFillColor(sf::Color(60, 60, 60));
+    whiteButton.setFillColor(uiColor(60, 60, 60));
     window.draw(whiteButton);
 
     sf::Text whiteText(font, "PLAY AS WHITE", 24);
     whiteText.setPosition({490.f, 320.f});
-    whiteText.setFillColor(sf::Color::White);
+    whiteText.setFillColor(textWhite());
     window.draw(whiteText);
 
     sf::RectangleShape blackButton({buttonWidth, buttonHeight});
     blackButton.setPosition({buttonX, 400.f});
-    blackButton.setFillColor(sf::Color(60, 60, 60));
+    blackButton.setFillColor(uiColor(60, 60, 60));
     window.draw(blackButton);
 
     sf::Text blackText(font, "PLAY AS BLACK", 24);
     blackText.setPosition({490.f, 420.f});
-    blackText.setFillColor(sf::Color::White);
+    blackText.setFillColor(textWhite());
     window.draw(blackText);
 }
 
 void ChessUI::drawAccountScreen() {
     if (accountSignedIn) {
         sf::RectangleShape shade({1200.f, 800.f});
-        shade.setFillColor(sf::Color(10, 11, 13, 235));
+        shade.setFillColor(uiColor(10, 11, 13, 235));
         window.draw(shade);
 
         sf::RectangleShape panel({600.f, 640.f});
         panel.setPosition({300.f, 80.f});
-        panel.setFillColor(sf::Color(28, 30, 33));
-        panel.setOutlineColor(sf::Color(70, 73, 78));
+        panel.setFillColor(uiColor(28, 30, 33));
+        panel.setOutlineColor(uiColor(70, 73, 78));
         panel.setOutlineThickness(1.f);
         window.draw(panel);
 
         sf::Text title(font, "PROFILE", 34);
         title.setPosition({510.f, 108.f});
-        title.setFillColor(sf::Color::White);
+        title.setFillColor(textWhite());
         window.draw(title);
 
         sf::CircleShape avatar(44.f);
         avatar.setPosition({556.f, 162.f});
         avatar.setTexture(&profilePictureTexture);
-        avatar.setOutlineColor(sf::Color(110, 114, 121));
+        avatar.setOutlineColor(uiColor(110, 114, 121));
         avatar.setOutlineThickness(1.f);
         window.draw(avatar);
 
         sf::Text signedInAs(font, "SIGNED IN AS", 14);
         signedInAs.setPosition({370.f, 268.f});
-        signedInAs.setFillColor(sf::Color(160, 163, 169));
+        signedInAs.setFillColor(uiColor(160, 163, 169));
         window.draw(signedInAs);
 
         sf::Text profileName(font, accountName, 22);
         profileName.setPosition({370.f, 287.f});
-        profileName.setFillColor(sf::Color::White);
+        profileName.setFillColor(textWhite());
         window.draw(profileName);
 
         if (!accountMessage.empty()) {
             sf::Text statusText(font, accountMessage, 13);
             statusText.setPosition({370.f, 393.f});
-            statusText.setFillColor(sf::Color(245, 170, 135));
+            statusText.setFillColor(uiColor(245, 170, 135));
             window.draw(statusText);
         }
 
         sf::RectangleShape historyButton({340.f, 52.f});
         historyButton.setPosition({430.f, 430.f});
-        historyButton.setFillColor(sf::Color(45, 48, 52));
-        historyButton.setOutlineColor(sf::Color(74, 78, 84));
+        historyButton.setFillColor(uiColor(45, 48, 52));
+        historyButton.setOutlineColor(uiColor(74, 78, 84));
         historyButton.setOutlineThickness(1.f);
         window.draw(historyButton);
 
         sf::Text historyText(font, "MATCH HISTORY", 17);
         historyText.setPosition({531.f, 446.f});
-        historyText.setFillColor(sf::Color::White);
+        historyText.setFillColor(textWhite());
         window.draw(historyText);
 
         sf::RectangleShape signOutButton({340.f, 52.f});
         signOutButton.setPosition({430.f, 495.f});
-        signOutButton.setFillColor(sf::Color(94, 52, 49));
-        signOutButton.setOutlineColor(sf::Color(128, 73, 68));
+        signOutButton.setFillColor(uiColor(94, 52, 49));
+        signOutButton.setOutlineColor(uiColor(128, 73, 68));
         signOutButton.setOutlineThickness(1.f);
         window.draw(signOutButton);
 
         sf::Text signOutText(font, "SIGN OUT", 17);
         signOutText.setPosition({558.f, 511.f});
-        signOutText.setFillColor(sf::Color::White);
+        signOutText.setFillColor(textWhite());
         window.draw(signOutText);
 
         sf::RectangleShape backButton({170.f, 44.f});
         backButton.setPosition({515.f, 585.f});
-        backButton.setFillColor(sf::Color(39, 41, 45));
-        backButton.setOutlineColor(sf::Color(65, 68, 73));
+        backButton.setFillColor(uiColor(39, 41, 45));
+        backButton.setOutlineColor(uiColor(65, 68, 73));
         backButton.setOutlineThickness(1.f);
         window.draw(backButton);
 
         sf::Text backText(font, "BACK", 16);
         backText.setPosition({574.f, 598.f});
-        backText.setFillColor(sf::Color::White);
+        backText.setFillColor(textWhite());
         window.draw(backText);
         if (profilePicturePickerOpen)
             drawProfilePicturePicker();
@@ -1460,31 +1493,31 @@ void ChessUI::drawAccountScreen() {
     }
 
     sf::RectangleShape shade({1200.f, 800.f});
-    shade.setFillColor(sf::Color(20, 20, 20, 210));
+    shade.setFillColor(uiColor(20, 20, 20, 210));
     window.draw(shade);
 
     sf::RectangleShape panel({600.f, 580.f});
     panel.setPosition({300.f, 120.f});
-    panel.setFillColor(sf::Color(42, 42, 42));
-    panel.setOutlineColor(sf::Color(190, 190, 190));
+    panel.setFillColor(uiColor(42, 42, 42));
+    panel.setOutlineColor(uiColor(190, 190, 190));
     panel.setOutlineThickness(2.f);
     window.draw(panel);
 
     sf::Text title(font, accountSignUpMode ? "CREATE ACCOUNT" : "SIGN IN", 34);
     title.setPosition({420.f, 153.f});
-    title.setFillColor(sf::Color::White);
+    title.setFillColor(textWhite());
     window.draw(title);
 
     sf::Text usernameLabel(font, "Username", 18);
     usernameLabel.setPosition({370.f, 225.f});
-    usernameLabel.setFillColor(sf::Color(225, 225, 225));
+    usernameLabel.setFillColor(uiColor(225, 225, 225));
     window.draw(usernameLabel);
 
     sf::RectangleShape usernameBox({460.f, 54.f});
     usernameBox.setPosition({370.f, 250.f});
-    usernameBox.setFillColor(sf::Color(27, 27, 27));
+    usernameBox.setFillColor(uiColor(27, 27, 27));
     usernameBox.setOutlineColor(accountPasswordField
-        ? sf::Color(95, 95, 95) : sf::Color(230, 190, 90));
+        ? uiColor(95, 95, 95) : uiColor(230, 190, 90));
     usernameBox.setOutlineThickness(2.f);
     window.draw(usernameBox);
 
@@ -1492,19 +1525,19 @@ void ChessUI::drawAccountScreen() {
         accountInput.empty() ? "Enter username" : accountInput, 18);
     username.setPosition({388.f, 266.f});
     username.setFillColor(accountInput.empty()
-        ? sf::Color(145, 145, 145) : sf::Color::White);
+        ? uiColor(145, 145, 145) : textWhite());
     window.draw(username);
 
     sf::Text passwordLabel(font, "Password", 18);
     passwordLabel.setPosition({370.f, 324.f});
-    passwordLabel.setFillColor(sf::Color(225, 225, 225));
+    passwordLabel.setFillColor(uiColor(225, 225, 225));
     window.draw(passwordLabel);
 
     sf::RectangleShape passwordBox({460.f, 54.f});
     passwordBox.setPosition({370.f, 349.f});
-    passwordBox.setFillColor(sf::Color(27, 27, 27));
+    passwordBox.setFillColor(uiColor(27, 27, 27));
     passwordBox.setOutlineColor(accountPasswordField
-        ? sf::Color(230, 190, 90) : sf::Color(95, 95, 95));
+        ? uiColor(230, 190, 90) : uiColor(95, 95, 95));
     passwordBox.setOutlineThickness(2.f);
     window.draw(passwordBox);
 
@@ -1513,18 +1546,18 @@ void ChessUI::drawAccountScreen() {
     sf::Text password(font, maskedPassword, 18);
     password.setPosition({388.f, 365.f});
     password.setFillColor(accountPassword.empty()
-        ? sf::Color(145, 145, 145) : sf::Color::White);
+        ? uiColor(145, 145, 145) : textWhite());
     window.draw(password);
 
     sf::RectangleShape modeButton({460.f, 48.f});
     modeButton.setPosition({370.f, 425.f});
-    modeButton.setFillColor(sf::Color(58, 58, 58));
+    modeButton.setFillColor(uiColor(58, 58, 58));
     window.draw(modeButton);
 
     sf::Text modeText(font, accountSignUpMode
         ? "Already registered? Sign in" : "New here? Create an account", 17);
     modeText.setPosition({435.f, 439.f});
-    modeText.setFillColor(sf::Color::White);
+    modeText.setFillColor(textWhite());
     window.draw(modeText);
 
     const std::string status = !accountMessage.empty()
@@ -1533,54 +1566,54 @@ void ChessUI::drawAccountScreen() {
     sf::Text statusText(font, status, 14);
     statusText.setPosition({370.f, 487.f});
     statusText.setFillColor(accountMessage.empty()
-        ? sf::Color(190, 190, 190) : sf::Color(245, 190, 120));
+        ? uiColor(190, 190, 190) : uiColor(245, 190, 120));
     window.draw(statusText);
 
     sf::RectangleShape submitButton({340.f, 56.f});
     submitButton.setPosition({430.f, 530.f});
-    submitButton.setFillColor(sf::Color(70, 125, 75));
+    submitButton.setFillColor(uiColor(70, 125, 75));
     window.draw(submitButton);
 
     sf::Text submitText(font, accountSignUpMode ? "SIGN UP" : "LOG IN", 20);
     submitText.setPosition({552.f, 547.f});
-    submitText.setFillColor(sf::Color::White);
+    submitText.setFillColor(textWhite());
     window.draw(submitText);
 
     sf::RectangleShape backButton({200.f, 50.f});
     backButton.setPosition({500.f, 620.f});
-    backButton.setFillColor(sf::Color(62, 62, 62));
+    backButton.setFillColor(uiColor(62, 62, 62));
     window.draw(backButton);
 
     sf::Text backText(font, "BACK", 18);
     backText.setPosition({570.f, 634.f});
-    backText.setFillColor(sf::Color::White);
+    backText.setFillColor(textWhite());
     window.draw(backText);
 }
 
 void ChessUI::drawProfilePicturePicker() {
     sf::RectangleShape shade({1200.f, 800.f});
-    shade.setFillColor(sf::Color(0, 0, 0, 185));
+    shade.setFillColor(uiColor(0, 0, 0, 185));
     window.draw(shade);
 
     sf::RectangleShape panel({800.f, 590.f});
     panel.setPosition({200.f, 120.f});
-    panel.setFillColor(sf::Color(28, 30, 33));
-    panel.setOutlineColor(sf::Color(90, 94, 100));
+    panel.setFillColor(uiColor(28, 30, 33));
+    panel.setOutlineColor(uiColor(90, 94, 100));
     panel.setOutlineThickness(2.f);
     window.draw(panel);
 
     sf::Text title(font, "CHOOSE A PROFILE PICTURE", 27);
     title.setPosition({390.f, 145.f});
-    title.setFillColor(sf::Color::White);
+    title.setFillColor(textWhite());
     window.draw(title);
 
     sf::RectangleShape closeButton({42.f, 38.f});
     closeButton.setPosition({930.f, 133.f});
-    closeButton.setFillColor(sf::Color(67, 48, 48));
+    closeButton.setFillColor(uiColor(67, 48, 48));
     window.draw(closeButton);
     sf::Text closeText(font, "X", 18);
     closeText.setPosition({944.f, 141.f});
-    closeText.setFillColor(sf::Color::White);
+    closeText.setFillColor(textWhite());
     window.draw(closeText);
 
     constexpr float cardWidth = 90.f;
@@ -1602,7 +1635,7 @@ void ChessUI::drawProfilePicturePicker() {
         sf::RectangleShape choice({cardWidth, cardHeight});
         choice.setPosition({x, y});
         choice.setFillColor(selected
-            ? sf::Color(82, 115, 82) : sf::Color(58, 58, 58));
+            ? uiColor(82, 115, 82) : uiColor(58, 58, 58));
         if (selected) {
             choice.setOutlineColor(sf::Color::White);
             choice.setOutlineThickness(2.f);
@@ -1622,25 +1655,25 @@ void ChessUI::drawProfilePicturePicker() {
     if (contentHeight > 400.f) {
         sf::Text scrollHint(font, "Scroll to see more pictures", 13);
         scrollHint.setPosition({488.f, 672.f});
-        scrollHint.setFillColor(sf::Color(165, 168, 173));
+        scrollHint.setFillColor(uiColor(165, 168, 173));
         window.draw(scrollHint);
     }
 }
 
 void ChessUI::drawMatchHistoryScreen() {
     sf::RectangleShape shade({1200.f, 800.f});
-    shade.setFillColor(sf::Color(24, 24, 24));
+    shade.setFillColor(uiColor(24, 24, 24));
     window.draw(shade);
 
     sf::Text title(font, "MATCH HISTORY", 36);
     title.setPosition({440.f, 96.f});
-    title.setFillColor(sf::Color::White);
+    title.setFillColor(textWhite());
     window.draw(title);
 
     sf::Text count(font,
         "Matches: " + std::to_string(matchSummaries.size()), 17);
     count.setPosition({285.f, 165.f});
-    count.setFillColor(sf::Color(210, 210, 210));
+    count.setFillColor(uiColor(210, 210, 210));
     window.draw(count);
 
     auto shortText = [](const std::string& value, std::size_t maxLength) {
@@ -1656,7 +1689,7 @@ void ChessUI::drawMatchHistoryScreen() {
                 : "Match history is not connected yet.");
         sf::Text empty(font, emptyMessage, 22);
         empty.setPosition({365.f, 340.f});
-        empty.setFillColor(sf::Color(200, 200, 200));
+        empty.setFillColor(uiColor(200, 200, 200));
         window.draw(empty);
     }
     else {
@@ -1664,7 +1697,7 @@ void ChessUI::drawMatchHistoryScreen() {
         const float tableY = 205.f;
         sf::RectangleShape header({650.f, 42.f});
         header.setPosition({tableX, tableY});
-        header.setFillColor(sf::Color(67, 67, 67));
+        header.setFillColor(uiColor(67, 67, 67));
         window.draw(header);
 
         const char* headings[] = {"DATE", "WHITE", "BLACK", "RESULT"};
@@ -1672,7 +1705,7 @@ void ChessUI::drawMatchHistoryScreen() {
         for (int i = 0; i < 4; ++i) {
             sf::Text heading(font, headings[i], 15);
             heading.setPosition({columns[i], tableY + 13.f});
-            heading.setFillColor(sf::Color(230, 230, 230));
+            heading.setFillColor(uiColor(230, 230, 230));
             window.draw(heading);
         }
 
@@ -1685,7 +1718,7 @@ void ChessUI::drawMatchHistoryScreen() {
             sf::RectangleShape row({650.f, 42.f});
             row.setPosition({tableX, y});
             row.setFillColor(i % 2 == 0
-                ? sf::Color(48, 48, 48) : sf::Color(39, 39, 39));
+                ? uiColor(48, 48, 48) : uiColor(39, 39, 39));
             window.draw(row);
 
             const MatchSummary& match = matchSummaries[i];
@@ -1698,7 +1731,7 @@ void ChessUI::drawMatchHistoryScreen() {
             for (int col = 0; col < 4; ++col) {
                 sf::Text value(font, values[col], 15);
                 value.setPosition({columns[col], y + 13.f});
-                value.setFillColor(sf::Color::White);
+                value.setFillColor(textWhite());
                 window.draw(value);
             }
         }
@@ -1708,19 +1741,19 @@ void ChessUI::drawMatchHistoryScreen() {
                 "Scroll to view all " +
                     std::to_string(matchSummaries.size()) + " matches.", 14);
             more.setPosition({475.f, 640.f});
-            more.setFillColor(sf::Color(190, 190, 190));
+            more.setFillColor(uiColor(190, 190, 190));
             window.draw(more);
         }
     }
 
     sf::RectangleShape backButton({200.f, 55.f});
     backButton.setPosition({500.f, 665.f});
-    backButton.setFillColor(sf::Color(65, 65, 65));
+    backButton.setFillColor(uiColor(65, 65, 65));
     window.draw(backButton);
 
     sf::Text backText(font, "BACK", 18);
     backText.setPosition({570.f, 682.f});
-    backText.setFillColor(sf::Color::White);
+    backText.setFillColor(textWhite());
     window.draw(backText);
 }
 
@@ -1870,9 +1903,40 @@ void ChessUI::drawLastMoveHighlights() {
 void ChessUI::drawSidePanel() {
     sf::RectangleShape panel( sf::Vector2f( sidePanelWidth, sidePanelHeight ) );
     panel.setPosition( sf::Vector2f( sidePanelX, sidePanelY ) );
-    panel.setFillColor( sf::Color(45, 45, 45) );
+    panel.setFillColor( uiColor(45, 45, 45) );
 
     window.draw(panel);
+}
+
+void ChessUI::drawClocks() {
+    if (gameMode == GameMode::EngineVsEngine)
+        return;
+
+    auto fmt = [](float seconds) {
+        int total = static_cast<int>(std::ceil(seconds));
+        if (total < 0) total = 0;
+        char buffer[16];
+        std::snprintf(buffer, sizeof(buffer), "%02d:%02d", total / 60, total % 60);
+        return std::string(buffer);
+    };
+
+    const int turn = game.get_current_turn();
+    const bool running = currentScreen == Screen::Game && !game.has_game_ended() && !historyPaused;
+
+    auto drawOne = [&](const char* label, float seconds, bool active, float x) {
+        sf::RectangleShape box({150.f, 40.f});
+        box.setPosition({x, 730.f});
+        box.setFillColor(active && running ? uiColor(70, 120, 75) : uiColor(60, 60, 60));
+        window.draw(box);
+
+        sf::Text text(font, std::string(label) + " " + fmt(seconds), 20);
+        text.setPosition({x + 12.f, 737.f});
+        text.setFillColor(seconds <= 15.f ? uiColor(255, 120, 120) : textWhite());
+        window.draw(text);
+    };
+
+    drawOne("White", turn == 0 ? moveTimeLeft : matchSeconds, turn == 0, 760.f);
+    drawOne("Black", turn == 1 ? moveTimeLeft : matchSeconds, turn == 1, 930.f);
 }
 
 void ChessUI::drawText() {
@@ -1902,7 +1966,7 @@ void ChessUI::drawText() {
 
     sf::Text historyTitle(font, "MOVE HISTORY", 28);
     historyTitle.setPosition({sidePanelX + 20.f, sidePanelY + 20.f});
-    historyTitle.setFillColor(sf::Color::White);
+    historyTitle.setFillColor(textWhite());
     window.draw(historyTitle);
 }
 
@@ -1957,7 +2021,7 @@ void ChessUI::drawPieces() {
             std::max(textureSize.x, textureSize.y)
         );
 
-        float scale = 120.f / maxSize;
+        float scale = 64.f * 1.3f / maxSize;
 
         sprite.setScale({scale, scale});
 
@@ -2000,40 +2064,106 @@ void ChessUI::drawPieces() {
     }
 }
 
-void ChessUI::refreshPieceThemes() {
-    pieceThemeFolders = {
-        "assets/pieces/",
-        "assets/pieces2/",
-        "assets/pieces3/"
-    };
-    pieceThemeKings.clear();
+namespace {
+std::vector<std::string> scanThemeFolders(const std::string& prefix, int plainNumber) {
+    namespace fs = std::filesystem;
+    std::vector<std::pair<int, std::string>> found;
 
-    for (const std::string& folder : pieceThemeFolders) {
-        sf::Texture kingTexture;
-        static_cast<void>(kingTexture.loadFromFile(folder + "white_king.png"));
-        pieceThemeKings.push_back(std::move(kingTexture));
+    if (fs::exists("assets")) {
+        for (const auto& entry : fs::directory_iterator("assets")) {
+            if (!entry.is_directory())
+                continue;
+
+            std::string name = entry.path().filename().string();
+
+            if (name == prefix) {
+                found.push_back({plainNumber, "assets/" + name + "/"});
+            }
+            else if (name.rfind(prefix, 0) == 0) {
+                try {
+                    int number = std::stoi(name.substr(prefix.size()));
+                    found.push_back({number, "assets/" + name + "/"});
+                }
+                catch (...) {
+                }
+            }
+        }
     }
+
+    std::sort(found.begin(), found.end(),
+        [](const auto& a, const auto& b) { return a.first < b.first; });
+
+    std::vector<std::string> folders;
+    for (const auto& item : found)
+        folders.push_back(item.second);
+    return folders;
+}
 }
 
-void ChessUI::refreshBoardThemes() {
-    boardThemeFolders = {
-        "assets/board/",
-        "assets/board1/",
-        "assets/board2/"
+void ChessUI::refreshPieceThemes() {
+    // Curated pairs: piece set i is always used together with board set i.
+    const std::vector<std::pair<std::string, std::string>> pairs = {
+        {"assets/pieces/",  "assets/board8/"},
+        {"assets/pieces5/", "assets/board6/"},
+        {"assets/pieces7/", "assets/board17/"},
+        {"assets/pieces8/", "assets/board18/"}
     };
+
+    pieceThemeFolders.clear();
+    boardThemeFolders.clear();
+    for (const auto& pair : pairs) {
+        if (std::filesystem::exists(pair.first + "white_king.png") &&
+            std::filesystem::exists(pair.second + "white_tile.png") &&
+            std::filesystem::exists(pair.second + "black_tile.png")) {
+            pieceThemeFolders.push_back(pair.first);
+            boardThemeFolders.push_back(pair.second);
+        }
+    }
+    if (pieceThemeFolders.empty()) {
+        pieceThemeFolders.push_back("assets/pieces/");
+        boardThemeFolders.push_back("assets/board/");
+    }
+
+    pieceThemeKings.clear();
     boardWhitePreviews.clear();
     boardBlackPreviews.clear();
+    themePreviewPieces.clear();
 
-    for (const std::string& folder : boardThemeFolders) {
+    const char* names[12] = {
+        "white_king", "white_queen", "white_bishop",
+        "white_knight", "white_rook", "white_pawn",
+        "black_king", "black_queen", "black_bishop",
+        "black_knight", "black_rook", "black_pawn"
+    };
+
+    for (size_t i = 0; i < pieceThemeFolders.size(); i++) {
+        sf::Texture kingTexture;
+        static_cast<void>(kingTexture.loadFromFile(pieceThemeFolders[i] + "white_king.png"));
+        pieceThemeKings.push_back(std::move(kingTexture));
+
+        std::vector<sf::Texture> set(12);
+        for (int k = 0; k < 12; k++)
+            static_cast<void>(set[k].loadFromFile(pieceThemeFolders[i] + names[k] + ".png"));
+        themePreviewPieces.push_back(std::move(set));
+
         sf::Texture whitePreview;
         sf::Texture blackPreview;
-
-        static_cast<void>(whitePreview.loadFromFile(folder + "white_tile.png"));
-        static_cast<void>(blackPreview.loadFromFile(folder + "black_tile.png"));
-
+        static_cast<void>(whitePreview.loadFromFile(boardThemeFolders[i] + "white_tile.png"));
+        static_cast<void>(blackPreview.loadFromFile(boardThemeFolders[i] + "black_tile.png"));
         boardWhitePreviews.push_back(std::move(whitePreview));
         boardBlackPreviews.push_back(std::move(blackPreview));
     }
+
+    if (pieceTheme >= static_cast<int>(pieceThemeFolders.size()))
+        pieceTheme = 0;
+    boardTheme = pieceTheme;
+}
+
+void ChessUI::refreshBoardThemes() {
+    // Board themes are paired with piece themes; refreshPieceThemes() fills both.
+    if (boardThemeFolders.empty())
+        refreshPieceThemes();
+    boardTheme = pieceTheme;
 }
 
 void ChessUI::loadBoardTextures() {
@@ -2073,7 +2203,7 @@ void ChessUI::drawLegalMoves() {
             int shownCol = displayCol(col);
             int shownRow = displayRow(row);
             dot.setPosition({ boardX + shownCol * squareSize + squareSize / 2.f, boardY + shownRow * squareSize + squareSize / 2.f});
-            dot.setFillColor( sf::Color(40, 40, 40, 110) );
+            dot.setFillColor( uiColor(40, 40, 40, 110) );
             window.draw(dot);
         }
 
@@ -2084,7 +2214,7 @@ void ChessUI::drawLegalMoves() {
             int shownRow = displayRow(row);
             ring.setPosition({ boardX + shownCol * squareSize + squareSize / 2.f, boardY + shownRow * squareSize + squareSize / 2.f });
             ring.setFillColor(sf::Color::Transparent);
-            ring.setOutlineColor( sf::Color(180, 40, 40, 180) );
+            ring.setOutlineColor( uiColor(180, 40, 40, 180) );
             ring.setOutlineThickness(5.f);
             window.draw(ring);
         }
@@ -2126,7 +2256,7 @@ void ChessUI::drawMoveHistory() {
         line.setOrigin({0.f, 1.5f});
         line.setPosition({x1, y1});
         line.setRotation(sf::degrees(angle));
-        line.setFillColor(sf::Color(120, 120, 120));
+        line.setFillColor(uiColor(120, 120, 120));
 
         window.draw(line);
     }
@@ -2144,10 +2274,10 @@ void ChessUI::drawMoveHistory() {
 
         sf::RectangleShape nodeBox({iconSize, iconSize});
         nodeBox.setPosition({x, y});
-        nodeBox.setFillColor(sf::Color(55, 55, 55));
+        nodeBox.setFillColor(uiColor(55, 55, 55));
 
         if (currentNode) {
-            nodeBox.setOutlineColor(sf::Color(255, 215, 0));
+            nodeBox.setOutlineColor(uiColor(255, 215, 0));
             nodeBox.setOutlineThickness(3.f);
         }
 
@@ -2179,7 +2309,7 @@ void ChessUI::drawMoveHistory() {
         else {
             sf::Text moveText(font, moveToText(move), 11);
             moveText.setPosition({x + 3.f, y + 14.f});
-            moveText.setFillColor(sf::Color::White);
+            moveText.setFillColor(textWhite());
 
             window.draw(moveText);
         }
@@ -2207,7 +2337,7 @@ void ChessUI::drawMoveHistory() {
 
         sf::RectangleShape track({visibleWidth, 7.f});
         track.setPosition({visibleLeft, trackY});
-        track.setFillColor(sf::Color(70, 70, 70));
+        track.setFillColor(uiColor(70, 70, 70));
         window.draw(track);
 
         float thumbWidth =
@@ -2231,7 +2361,7 @@ void ChessUI::drawMoveHistory() {
 
         sf::RectangleShape thumb({thumbWidth, 9.f});
         thumb.setPosition({thumbX, trackY - 1.f});
-        thumb.setFillColor(sf::Color(175, 175, 175));
+        thumb.setFillColor(uiColor(175, 175, 175));
         window.draw(thumb);
     }
 }
@@ -2364,49 +2494,49 @@ std::vector<sf::Vector2f> ChessUI::getHistoryNodePositions() const {
 void ChessUI::drawSettings() {
     sf::RectangleShape windowBox({1200.f, 800.f});
     windowBox.setPosition({0.f, 0.f});
-    windowBox.setFillColor(sf::Color(12, 13, 15));
+    windowBox.setFillColor(uiColor(12, 13, 15));
     window.draw(windowBox);
 
     sf::Text title(font, "SETTINGS", 34);
     title.setPosition({72.f, 38.f});
-    title.setFillColor(sf::Color::White);
+    title.setFillColor(textWhite());
     window.draw(title);
 
     sf::Text backArrow(font, "<", 30);
     backArrow.setPosition({36.f, 37.f});
-    backArrow.setFillColor(sf::Color(190, 192, 196));
+    backArrow.setFillColor(uiColor(190, 192, 196));
     window.draw(backArrow);
 
     sf::Text description(font,
         "Adjust how you move pieces and view the chessboard.", 14);
     description.setPosition({74.f, 91.f});
-    description.setFillColor(sf::Color(160, 163, 169));
+    description.setFillColor(uiColor(160, 163, 169));
     window.draw(description);
 
     sf::RectangleShape gameplayTab({140.f, 38.f});
     gameplayTab.setPosition({812.f, 42.f});
     gameplayTab.setFillColor(settingsTab == 0
-        ? sf::Color(46, 47, 50) : sf::Color(25, 26, 28));
-    gameplayTab.setOutlineColor(sf::Color(55, 57, 61));
+        ? uiColor(46, 47, 50) : uiColor(25, 26, 28));
+    gameplayTab.setOutlineColor(uiColor(55, 57, 61));
     gameplayTab.setOutlineThickness(1.f);
     window.draw(gameplayTab);
 
     sf::Text gameplayText(font, "GAMEPLAY", 16);
     gameplayText.setPosition({832.f, 52.f});
-    gameplayText.setFillColor(sf::Color::White);
+    gameplayText.setFillColor(textWhite());
     window.draw(gameplayText);
 
     sf::RectangleShape designTab({140.f, 38.f});
     designTab.setPosition({962.f, 42.f});
     designTab.setFillColor(settingsTab == 1
-        ? sf::Color(46, 47, 50) : sf::Color(25, 26, 28));
-    designTab.setOutlineColor(sf::Color(55, 57, 61));
+        ? uiColor(46, 47, 50) : uiColor(25, 26, 28));
+    designTab.setOutlineColor(uiColor(55, 57, 61));
     designTab.setOutlineThickness(1.f);
     window.draw(designTab);
 
     sf::Text designText(font, "DESIGN", 16);
     designText.setPosition({1008.f, 52.f});
-    designText.setFillColor(sf::Color::White);
+    designText.setFillColor(textWhite());
     window.draw(designText);
 
     if (settingsTab == 0)
@@ -2417,33 +2547,33 @@ void ChessUI::drawSettings() {
     if (gameStarted) {
         sf::RectangleShape playAgainButton({150.f, 42.f});
         playAgainButton.setPosition({350.f, 662.f});
-        playAgainButton.setFillColor(sf::Color(70, 120, 75));
+        playAgainButton.setFillColor(uiColor(70, 120, 75));
         window.draw(playAgainButton);
 
         sf::Text playAgainText(font, "PLAY AGAIN", 14);
         playAgainText.setPosition({374.f, 676.f});
-        playAgainText.setFillColor(sf::Color::White);
+        playAgainText.setFillColor(textWhite());
         window.draw(playAgainText);
     }
 
     sf::RectangleShape menuButton({150.f, 42.f});
     menuButton.setPosition({525.f, 662.f});
-    menuButton.setFillColor(sf::Color(65, 65, 65));
+    menuButton.setFillColor(uiColor(65, 65, 65));
     window.draw(menuButton);
 
     sf::Text menuText(font, "MAIN MENU", 14);
     menuText.setPosition({552.f, 676.f});
-    menuText.setFillColor(sf::Color::White);
+    menuText.setFillColor(textWhite());
     window.draw(menuText);
 
     sf::RectangleShape backButton({150.f, 42.f});
     backButton.setPosition({700.f, 662.f});
-    backButton.setFillColor(sf::Color(55, 55, 55));
+    backButton.setFillColor(uiColor(55, 55, 55));
     window.draw(backButton);
 
     sf::Text backText(font, "BACK", 14);
     backText.setPosition({756.f, 676.f});
-    backText.setFillColor(sf::Color::White);
+    backText.setFillColor(textWhite());
     window.draw(backText);
 }
 
@@ -2451,12 +2581,12 @@ void ChessUI::drawGameplaySettings() {
     auto drawRow = [&](const std::string& label, float y, bool hasHint) {
         sf::Text labelText(font, label, hasHint ? 17 : 18);
         labelText.setPosition({315.f, y + (hasHint ? 3.f : 13.f)});
-        labelText.setFillColor(sf::Color(238, 239, 242));
+        labelText.setFillColor(uiColor(238, 239, 242));
         window.draw(labelText);
 
         sf::RectangleShape separator({620.f, 1.f});
         separator.setPosition({290.f, y + 49.f});
-        separator.setFillColor(sf::Color(47, 49, 53));
+        separator.setFillColor(uiColor(47, 49, 53));
         window.draw(separator);
     };
 
@@ -2468,24 +2598,24 @@ void ChessUI::drawGameplaySettings() {
             sf::Text hint(font,
                 "Click and engine moves slide; dragging stays direct.", 12);
             hint.setPosition({315.f, y + 29.f});
-            hint.setFillColor(sf::Color(170, 174, 181));
+            hint.setFillColor(uiColor(170, 174, 181));
             window.draw(hint);
         }
 
         sf::RectangleShape toggle({86.f, 30.f});
         toggle.setPosition({824.f, y + 9.f});
         toggle.setFillColor(enabled
-            ? sf::Color(63, 128, 78)
-            : sf::Color(78, 82, 88));
+            ? uiColor(63, 128, 78)
+            : uiColor(78, 82, 88));
         toggle.setOutlineColor(enabled
-            ? sf::Color(91, 157, 104)
-            : sf::Color(104, 108, 114));
+            ? uiColor(91, 157, 104)
+            : uiColor(104, 108, 114));
         toggle.setOutlineThickness(1.f);
         window.draw(toggle);
 
         sf::Text state(font, enabled ? "ON" : "OFF", 13);
         state.setPosition({enabled ? 857.f : 852.f, y + 16.f});
-        state.setFillColor(sf::Color::White);
+        state.setFillColor(enabled ? sf::Color::White : textWhite());
         window.draw(state);
     };
 
@@ -2498,8 +2628,8 @@ void ChessUI::drawGameplaySettings() {
     drawRow("Move history", 490.f, false);
     sf::RectangleShape historyToggle({86.f, 30.f});
     historyToggle.setPosition({824.f, 499.f});
-    historyToggle.setFillColor(sf::Color(78, 82, 88));
-    historyToggle.setOutlineColor(sf::Color(104, 108, 114));
+    historyToggle.setFillColor(uiColor(78, 82, 88));
+    historyToggle.setOutlineColor(uiColor(104, 108, 114));
     historyToggle.setOutlineThickness(1.f);
     window.draw(historyToggle);
 
@@ -2510,171 +2640,128 @@ void ChessUI::drawGameplaySettings() {
     );
     historyState.setPosition({historyStyle == HistoryStyle::Pictogram ? 847.f : 851.f,
                               507.f});
-    historyState.setFillColor(sf::Color::White);
+    historyState.setFillColor(textWhite());
     window.draw(historyState);
 
     drawToggle("Fullscreen (F11)", fullscreen, 544.f);
+    drawToggle("Light mode", gLightMode, 598.f);
 }
 
 void ChessUI::drawDesignSettings() {
-    sf::Text pieceTitle(font, "Piece style", 20);
-    pieceTitle.setPosition({285.f, 215.f});
-    pieceTitle.setFillColor(sf::Color(220, 220, 220));
-    window.draw(pieceTitle);
+    sf::Text title(font, "Game theme  -  pieces and board come as a pair", 20);
+    title.setPosition({290.f, 200.f});
+    title.setFillColor(uiColor(220, 220, 220));
+    window.draw(title);
 
-    const float pieceCardWidth = 90.f;
-    const float pieceCardHeight = 82.f;
-    const float pieceGapX = 18.f;
-    const float pieceStartX = 285.f;
-    const float pieceStartY = 245.f;
-    const int pieceColumns = 6;
+    const float tile = 46.f;
+    const float pieceMax = 42.f;
 
     for (int i = 0; i < static_cast<int>(pieceThemeFolders.size()); i++) {
-        int row = i / pieceColumns;
-        int col = i % pieceColumns;
+        const float x = 290.f + i * 157.f;
+        const float y = 235.f;
+        const bool selected = (i == pieceTheme);
 
-        float x = pieceStartX + col * (pieceCardWidth + pieceGapX);
-        float y = pieceStartY + row * 92.f;
-
-        if (y + pieceCardHeight > 400.f)
-            break;
-
-        sf::RectangleShape card({pieceCardWidth, pieceCardHeight});
+        sf::RectangleShape card({148.f, 290.f});
         card.setPosition({x, y});
-        card.setFillColor(
-            i == pieceTheme
-            ? sf::Color(82, 115, 82)
-            : sf::Color(58, 58, 58)
-        );
-
-        if (i == pieceTheme) {
-            card.setOutlineColor(sf::Color::White);
-            card.setOutlineThickness(2.f);
-        }
-
+        card.setFillColor(selected ? uiColor(70, 100, 70) : uiColor(52, 52, 52));
+        card.setOutlineColor(selected ? uiColor(255, 255, 255) : uiColor(80, 80, 80));
+        card.setOutlineThickness(selected ? 3.f : 1.f);
         window.draw(card);
 
-        sf::Sprite king(pieceThemeKings[i]);
-        const sf::Vector2u size = pieceThemeKings[i].getSize();
-        const float maxSize = static_cast<float>(std::max(size.x, size.y));
-        const float scale = 60.f / maxSize;
-        king.setScale({scale, scale});
-        const float width = size.x * scale;
-        const float height = size.y * scale;
-        king.setPosition({
-            x + (pieceCardWidth - width) / 2.f,
-            y + (pieceCardHeight - height) / 2.f
-        });
-        window.draw(king);
-    }
+        static const char* themeNames[] = {"Classic", "Pixel", "Latte", "Cat"};
+        sf::Text name(font, i < 4 ? themeNames[i] : "Theme " + std::to_string(i + 1), 17);
+        name.setPosition({x + 10.f, y + 8.f});
+        name.setFillColor(textWhite());
+        window.draw(name);
 
-    sf::Text boardTitle(font, "Board style", 20);
-    boardTitle.setPosition({285.f, 440.f});
-    boardTitle.setFillColor(sf::Color(220, 220, 220));
-    window.draw(boardTitle);
+        const float bx = x + 5.f;
+        const float by = y + 38.f;
 
-    const float boardCardWidth = 90.f;
-    const float boardCardHeight = 82.f;
-    const float boardGapX = 18.f;
-    const float boardStartX = 285.f;
-    const float boardStartY = 470.f;
-    const int boardColumns = 6;
+        for (int r = 0; r < 4; r++) {
+            for (int c = 0; c < 3; c++) {
+                const bool light = (r + c) % 2 == 0;
+                const sf::Texture& tex = light ? boardWhitePreviews[i] : boardBlackPreviews[i];
+                sf::Sprite sq(tex);
+                const sf::Vector2u ts = tex.getSize();
+                sq.setScale({tile / ts.x, tile / ts.y});
+                sq.setPosition({bx + c * tile, by + r * tile});
+                window.draw(sq);
 
-    for (int i = 0; i < static_cast<int>(boardThemeFolders.size()); i++) {
-        int row = i / boardColumns;
-        int col = i % boardColumns;
-
-        float x = boardStartX + col * (boardCardWidth + boardGapX);
-        float y = boardStartY + row * 92.f;
-
-        if (y + boardCardHeight > 625.f)
-            break;
-
-        sf::RectangleShape card({boardCardWidth, boardCardHeight});
-        card.setPosition({x, y});
-        card.setFillColor(
-            i == boardTheme
-            ? sf::Color(82, 115, 82)
-            : sf::Color(58, 58, 58)
-        );
-
-        if (i == boardTheme) {
-            card.setOutlineColor(sf::Color::White);
-            card.setOutlineThickness(2.f);
+                const sf::Texture& pt = themePreviewPieces[i][r * 3 + c];
+                const sf::Vector2u ps = pt.getSize();
+                const float m = static_cast<float>(std::max(ps.x, ps.y));
+                if (m <= 0.f)
+                    continue;
+                const float sc = pieceMax / m;
+                sf::Sprite piece(pt);
+                piece.setScale({sc, sc});
+                piece.setPosition({
+                    bx + c * tile + (tile - ps.x * sc) / 2.f,
+                    by + r * tile + (tile - ps.y * sc) / 2.f
+                });
+                window.draw(piece);
+            }
         }
 
-        window.draw(card);
-
-        const float previewSize = 32.f;
-        sf::Sprite whiteTile(boardWhitePreviews[i]);
-        const sf::Vector2u whiteSize = boardWhitePreviews[i].getSize();
-        whiteTile.setScale({
-            previewSize / whiteSize.x,
-            previewSize / whiteSize.y
-        });
-        whiteTile.setPosition({x + 12.f, y + 25.f});
-        window.draw(whiteTile);
-
-        sf::Sprite blackTile(boardBlackPreviews[i]);
-        const sf::Vector2u blackSize = boardBlackPreviews[i].getSize();
-        blackTile.setScale({
-            previewSize / blackSize.x,
-            previewSize / blackSize.y
-        });
-        blackTile.setPosition({x + 46.f, y + 25.f});
-        window.draw(blackTile);
+        sf::Text state(font, selected ? "SELECTED" : "Click to use", 13);
+        state.setPosition({x + 10.f, y + 262.f});
+        state.setFillColor(selected ? uiColor(190, 230, 190) : uiColor(170, 174, 181));
+        window.draw(state);
     }
 }
 
 void ChessUI::drawEndScreen() {
     sf::RectangleShape dimmer({1200.f, 800.f});
     dimmer.setPosition({0.f, 0.f});
-    dimmer.setFillColor(sf::Color(0, 0, 0, 155));
+    dimmer.setFillColor(uiColor(0, 0, 0, 155));
     window.draw(dimmer);
 
     sf::RectangleShape endBox({520.f, 550.f});
     endBox.setPosition({340.f, 140.f});
-    endBox.setFillColor(sf::Color(45, 45, 45));
+    endBox.setFillColor(uiColor(45, 45, 45));
     window.draw(endBox);
 
     sf::Text title(font, "GAME OVER", 48);
     title.setPosition({465.f, 235.f});
-    title.setFillColor(sf::Color::White);
+    title.setFillColor(textWhite());
     window.draw(title);
 
-    sf::Text message(font, "The game has ended.", 24);
+    std::string endMessage = "The game has ended.";
+    if (timeExpired)
+        endMessage = std::string("Time's up! ") + (timeoutLoser == 0 ? "Black" : "White") + " wins on time.";
+    sf::Text message(font, endMessage, 24);
     message.setPosition({477.f, 330.f});
-    message.setFillColor(sf::Color(210, 210, 210));
+    message.setFillColor(uiColor(210, 210, 210));
     window.draw(message);
 
     sf::RectangleShape playAgain({200.f, 65.f});
     playAgain.setPosition({390.f, 500.f});
-    playAgain.setFillColor(sf::Color(70, 120, 75));
+    playAgain.setFillColor(uiColor(70, 120, 75));
     window.draw(playAgain);
 
     sf::Text playAgainText(font, "PLAY AGAIN", 20);
     playAgainText.setPosition({435.f, 520.f});
-    playAgainText.setFillColor(sf::Color::White);
+    playAgainText.setFillColor(textWhite());
     window.draw(playAgainText);
 
     sf::RectangleShape settings({200.f, 65.f});
     settings.setPosition({610.f, 500.f});
-    settings.setFillColor(sf::Color(65, 65, 65));
+    settings.setFillColor(uiColor(65, 65, 65));
     window.draw(settings);
 
     sf::Text settingsText(font, "SETTINGS", 20);
     settingsText.setPosition({665.f, 520.f});
-    settingsText.setFillColor(sf::Color::White);
+    settingsText.setFillColor(textWhite());
     window.draw(settingsText);
 
     sf::RectangleShape menu({200.f, 60.f});
     menu.setPosition({500.f, 590.f});
-    menu.setFillColor(sf::Color(55, 55, 55));
+    menu.setFillColor(uiColor(55, 55, 55));
     window.draw(menu);
 
     sf::Text menuText(font, "MAIN MENU", 18);
     menuText.setPosition({550.f, 608.f});
-    menuText.setFillColor(sf::Color::White);
+    menuText.setFillColor(textWhite());
     window.draw(menuText);
 }
 
@@ -2694,12 +2781,12 @@ void ChessUI::drawCapturedPieces() {
 
     sf::Text whiteLabel(font, "White captured:", 14);
     whiteLabel.setPosition({50.f, 726.f});
-    whiteLabel.setFillColor(sf::Color::White);
+    whiteLabel.setFillColor(textWhite());
     window.draw(whiteLabel);
 
     sf::Text blackLabel(font, "Black captured:", 14);
     blackLabel.setPosition({50.f, 760.f});
-    blackLabel.setFillColor(sf::Color::White);
+    blackLabel.setFillColor(textWhite());
     window.draw(blackLabel);
 
     auto drawCapturedRow = [&](const std::vector<int>& pieces, float y) {
@@ -2741,7 +2828,7 @@ void ChessUI::drawCoordinates() {
             static_cast<float>(boardY + boardSize - 18)
         });
 
-        fileText.setFillColor(sf::Color(35, 35, 35, 210));
+        fileText.setFillColor(uiColor(35, 35, 35, 210));
         window.draw(fileText);
     }
 
@@ -2757,7 +2844,7 @@ void ChessUI::drawCoordinates() {
             static_cast<float>(boardY + shownRow * squareSize + 2)
         });
 
-        rankText.setFillColor(sf::Color(35, 35, 35, 210));
+        rankText.setFillColor(uiColor(35, 35, 35, 210));
         window.draw(rankText);
     }
 }
@@ -2834,21 +2921,21 @@ void ChessUI::drawMoveArrow(const MoveHistoryEntry& move) {
     arrowLine.setOrigin({0.f, arrowThickness / 2.f});
     arrowLine.setPosition({startArrowX, startArrowY});
     arrowLine.setRotation(sf::degrees(angle));
-    arrowLine.setFillColor(sf::Color(220, 40, 40, 220));
+    arrowLine.setFillColor(uiColor(220, 40, 40, 220));
     window.draw(arrowLine);
 
     sf::RectangleShape arrowHead1({arrowHeadLength, arrowThickness});
     arrowHead1.setOrigin({0.f, arrowThickness / 2.f});
     arrowHead1.setPosition({endArrowX, endArrowY});
     arrowHead1.setRotation(sf::degrees(angle + 150.f));
-    arrowHead1.setFillColor(sf::Color(220, 40, 40, 220));
+    arrowHead1.setFillColor(uiColor(220, 40, 40, 220));
     window.draw(arrowHead1);
 
     sf::RectangleShape arrowHead2({arrowHeadLength, arrowThickness});
     arrowHead2.setOrigin({0.f, arrowThickness / 2.f});
     arrowHead2.setPosition({endArrowX, endArrowY});
     arrowHead2.setRotation(sf::degrees(angle - 150.f));
-    arrowHead2.setFillColor(sf::Color(220, 40, 40, 220));
+    arrowHead2.setFillColor(uiColor(220, 40, 40, 220));
     window.draw(arrowHead2);
 }
 
@@ -2982,6 +3069,14 @@ void ChessUI::startGame(int engineSide, GameMode mode) {
     dragging = false;
     draggedRow = -1;
     draggedCol = -1;
+
+    moveTimeLeft = matchSeconds;
+    clockKeyNode = -2;
+    clockKeyTurn = -1;
+    clockKeyMovesLeft = -1;
+    timeExpired = false;
+    timeoutLoser = -1;
+    clockTimer.restart();
 
     engineStalled = false;
     historyPaused = false;

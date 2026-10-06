@@ -106,7 +106,7 @@ private:
     Move animatedMove{};
     bool slidePieces = true;
     bool fullscreen = false;
-    const float engineMoveDelaySeconds = 0.5f;
+    const float engineMoveDelaySeconds = 1.0f;
     const float engineSlideSeconds = 0.3f;
 
     int promotionFromRow = -1;
@@ -133,6 +133,17 @@ private:
     bool showCoordinates = true;
     bool soundEffects = true;
     bool historyPaused = false;
+
+    const float matchSeconds = 120.f;
+    float moveTimeLeft = 120.f;
+    int clockKeyNode = -2;
+    int clockKeyTurn = -1;
+    int clockKeyMovesLeft = -1;
+    sf::Clock clockTimer;
+    bool timeExpired = false;
+    int timeoutLoser = -1;
+    void updateClocks();
+    void drawClocks();
     bool accountSignUpMode = false;
     bool accountPasswordField = false;
     bool accountSignedIn = false;
@@ -156,6 +167,7 @@ private:
 
     std::vector<std::string> pieceThemeFolders;
     std::vector<sf::Texture> pieceThemeKings;
+    std::vector<std::vector<sf::Texture>> themePreviewPieces;
 
     int boardTheme = 0;
     std::vector<std::string> boardThemeFolders;
