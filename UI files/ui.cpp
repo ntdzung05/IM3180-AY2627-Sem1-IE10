@@ -2223,13 +2223,6 @@ void ChessUI::drawGameplaySettings() {
     auto drawToggle = [&](const std::string& label, bool enabled, float y, bool slideHint = false) {
         drawRow(label, y, slideHint);
 
-        if (slideHint) {
-            sf::Text hint(font, "Click and engine moves slide; dragging stays direct.", 12);
-            hint.setPosition({315.f, y + 29.f});
-            hint.setFillColor(sf::Color(170, 174, 181));
-            window.draw(hint);
-        }
-
         sf::RectangleShape toggle({86.f, 30.f});
         toggle.setPosition({824.f, y + 9.f});
         toggle.setFillColor(enabled ? sf::Color(63, 128, 78) : sf::Color(78, 82, 88));
@@ -2244,7 +2237,7 @@ void ChessUI::drawGameplaySettings() {
     };
 
     drawToggle("Drag pieces", dragPieces, 220.f);
-    drawToggle("Slide pieces", slidePieces, 274.f, true);
+    drawToggle("Slide pieces", slidePieces, 274.f);
     drawToggle("Show possible moves", showPossibleMoves, 328.f);
     drawToggle("Board coordinates", showCoordinates, 382.f);
     drawToggle("Sound effects", soundEffects, 436.f);
