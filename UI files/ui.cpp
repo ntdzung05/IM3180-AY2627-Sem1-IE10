@@ -17,13 +17,12 @@ constexpr float topProfileRadius = 27.f;
 
 
 void loadDefaultProfilePicture(sf::Texture& texture, std::string& path) {
-    static_cast<void>(texture.loadFromFile("assets/pfp/default_pfp.jpe"));
+    path = "assets/pfp/default_pfp.jpe";
+    static_cast<void>(texture.loadFromFile(path));
 }
 }
 
-ChessUI::ChessUI(int engineSide, int searchDepth) 
-: game(engineSide), window( sf::VideoMode({1200, 800}), "Chess AI", sf::Style::Default, sf::State::Windowed), 
-engineSearchDepth(searchDepth), startingBoard(game) {
+ChessUI::ChessUI(int engineSide, int searchDepth) : game(engineSide), window(sf::VideoMode({1200, 800}), "Chess AI", sf::Style::Default, sf::State::Windowed), engineSearchDepth(searchDepth), startingBoard(game) {
     if(searchDepth < 1) throw std::invalid_argument("searchDepth must be positive");
     window.setFramerateLimit(60);
     updateResponsiveView(window.getSize().x, window.getSize().y);
@@ -76,10 +75,7 @@ bool ChessUI::applyMove(int fromRow, int fromCol, int toRow, int toCol, int prom
         }
 
         promotionPiece = std::abs(promotionPiece);
-        if (promotionPiece != 2 &&
-            promotionPiece != 3 &&
-            promotionPiece != 4 &&
-            promotionPiece != 5) {
+        if (promotionPiece != 2 && promotionPiece != 3 && promotionPiece != 4 && promotionPiece != 5) {
             return false;
         }
 
@@ -102,16 +98,7 @@ bool ChessUI::applyMove(int fromRow, int fromCol, int toRow, int toCol, int prom
         promotionToCol = -1;
     }
 
-    MoveHistoryEntry entry{
-        movedPiece,
-        fromRow,
-        fromCol,
-        toRow,
-        toCol,
-        capturedPiece,
-        promotionMove ? promotionPiece : 0,
-        game
-    };
+    MoveHistoryEntry entry{movedPiece, fromRow, fromCol, toRow, toCol, capturedPiece, promotionMove ? promotionPiece : 0, game};
 
     int newNode = static_cast<int>(historyTree.size());
     historyTree.push_back({entry, currentHistoryNode, {}});
@@ -174,8 +161,7 @@ void ChessUI::updateEngine() {
         return;
     }
 
-    if (game.has_game_ended() || engineStalled || historyPaused ||
-        gameMode == GameMode::PlayerVsPlayer)
+    if (game.has_game_ended() || engineStalled || historyPaused || gameMode == GameMode::PlayerVsPlayer)
         return;
 
     if (gameMode == GameMode::PlayerVsEngine) {
@@ -192,8 +178,7 @@ void ChessUI::updateEngine() {
     if (engineMoveClock.getElapsedTime().asSeconds() < engineMoveDelaySeconds)
         return;
 
-    if (currentHistoryIndex + 1 <
-        static_cast<int>(moveHistory.size())) {
+    if (currentHistoryIndex + 1 < static_cast<int>(moveHistory.size())) {
         return;
     }
 
@@ -217,11 +202,7 @@ void ChessUI::updateEngine() {
         return;
     }
 
-    if (!applyMove(
-            fromRow,
-            fromCol,
-            toRow,
-            toCol)) {
+    if (!applyMove( fromRow, fromCol, toRow, toCol)) {
         engineStalled = true;
     }
 }
@@ -238,19 +219,14 @@ void ChessUI::updateResponsiveView(unsigned int width, unsigned int height) {
     sf::FloatRect viewport;
     if (actualAspect > targetAspect) {
         const float viewportWidth = targetAspect / actualAspect;
-        viewport = sf::FloatRect(
-            {(1.f - viewportWidth) / 2.f, 0.f},
-            {viewportWidth, 1.f});
+        viewport = sf::FloatRect( {(1.f - viewportWidth) / 2.f, 0.f}, {viewportWidth, 1.f});
     }
     else {
         const float viewportHeight = actualAspect / targetAspect;
-        viewport = sf::FloatRect(
-            {0.f, (1.f - viewportHeight) / 2.f},
-            {1.f, viewportHeight});
+        viewport = sf::FloatRect( {0.f, (1.f - viewportHeight) / 2.f}, {1.f, viewportHeight});
     }
 
-    logicalView = sf::View(sf::FloatRect(
-        {0.f, 0.f}, {logicalWidth, logicalHeight}));
+    logicalView = sf::View(sf::FloatRect( {0.f, 0.f}, {logicalWidth, logicalHeight}));
     logicalView.setViewport(viewport);
     window.setView(logicalView);
 }
@@ -351,10 +327,7 @@ void ChessUI::handleEvents() {
                 float contentRight = sidePanelX + 25.f;
 
                 for (const auto& pos : positions) {
-                    contentRight = std::max(
-                        contentRight,
-                        pos.x + historyHorizontalScroll + iconSize
-                    );
+                    contentRight = std::max( contentRight, pos.x + historyHorizontalScroll + iconSize );
                 }
 
                 const float visibleLeft = sidePanelX + 20.f;
@@ -366,9 +339,7 @@ void ChessUI::handleEvents() {
                 const float maxHorizontalScroll =
                     std::max(0.f, contentWidth - visibleWidth);
 
-                bool shiftHeld =
-                    sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LShift) ||
-                    sf::Keyboard::isKeyPressed(sf::Keyboard::Key::RShift);
+                bool shiftHeld = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LShift) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::RShift);
 
                 bool overHorizontalBar =
                     mouseY >= sidePanelY + sidePanelHeight - 28.f;
@@ -430,48 +401,39 @@ void ChessUI::handleEvents() {
                 if (currentScreen == Screen::Account) {
                     if (accountSignedIn) {
                         if (profilePicturePickerOpen) {
-                            if (mouseX >= 930.f && mouseX <= 975.f &&
-                                mouseY >= 135.f && mouseY <= 180.f) {
+                            if (mouseX >= 930.f && mouseX <= 975.f && mouseY >= 135.f && mouseY <= 180.f) {
                                 profilePicturePickerOpen = false;
-                            } else if (mouseX >= 285.f && mouseX < 933.f &&
-                                       mouseY >= 245.f && mouseY < 645.f) {
+                            } else if (mouseX >= 285.f && mouseX < 933.f && mouseY >= 245.f && mouseY < 645.f) {
                                 constexpr float cardWidth = 90.f;
                                 constexpr float cardHeight = 82.f;
                                 constexpr float stepX = 108.f;
                                 constexpr float stepY = 92.f;
                                 constexpr int columns = 6;
-                                const int col = static_cast<int>(
-                                    (mouseX - 285.f) / stepX);
-                                const int row = static_cast<int>(
-                                    (mouseY - 245.f + profilePicturePickerScroll) / stepY);
+                                const int col = static_cast<int>( (mouseX - 285.f) / stepX);
+                                const int row = static_cast<int>( (mouseY - 245.f + profilePicturePickerScroll) / stepY);
                                 const int index = row * columns + col;
                                 const float cardX = 285.f + col * stepX;
                                 const float cardY = 245.f + row * stepY
                                     - profilePicturePickerScroll;
-                                if (col < columns && mouseX < cardX + cardWidth &&
-                                    mouseY >= cardY && mouseY < cardY + cardHeight &&
-                                    index >= 0 && index < static_cast<int>(profilePictureOptions.size())) {
+                                if (col < columns && mouseX < cardX + cardWidth && mouseY >= cardY && mouseY < cardY + cardHeight && index >= 0 && index < static_cast<int>(profilePictureOptions.size())) {
                                     profilePicturePath = profilePictureOptions[index];
                                     static_cast<void>(profilePictureTexture.loadFromFile(profilePicturePath));
                                     profilePicturePickerOpen = false;
                                 }
                             }
-                            else if (mouseX < 200.f || mouseX > 1000.f ||
-                                     mouseY < 120.f || mouseY > 710.f) {
+                            else if (mouseX < 200.f || mouseX > 1000.f || mouseY < 120.f || mouseY > 710.f) {
                                 profilePicturePickerOpen = false;
                             }
                             continue;
                         }
 
-                        if (mouseX >= 556.f && mouseX <= 644.f &&
-                            mouseY >= 162.f && mouseY <= 250.f) {
+                        if (mouseX >= 556.f && mouseX <= 644.f && mouseY >= 162.f && mouseY <= 250.f) {
                             playSound(uiClickSoundBuffer);
                             loadProfilePictureOptions();
                             profilePicturePickerScroll = 0.f;
                             profilePicturePickerOpen = true;
                         }
-                        else if (mouseX >= 430.f && mouseX <= 770.f &&
-                            mouseY >= 430.f && mouseY <= 482.f) {
+                        else if (mouseX >= 430.f && mouseX <= 770.f && mouseY >= 430.f && mouseY <= 482.f) {
                             playSound(uiClickSoundBuffer);
                             matchHistoryReturnScreen = Screen::Account;
                             matchHistoryScroll = 0.f;
@@ -486,8 +448,7 @@ void ChessUI::handleEvents() {
                             }
                             currentScreen = Screen::MatchHistory;
                         }
-                        else if (mouseX >= 430.f && mouseX <= 770.f &&
-                                 mouseY >= 495.f && mouseY <= 547.f) {
+                        else if (mouseX >= 430.f && mouseX <= 770.f && mouseY >= 495.f && mouseY <= 547.f) {
                             playSound(uiClickSoundBuffer);
                             if (logoutHandler) {
                                 try {
@@ -504,26 +465,19 @@ void ChessUI::handleEvents() {
                             accountPassword.clear();
                             accountSignUpMode = false;
                             profilePicturePickerOpen = false;
-                            loadDefaultProfilePicture(
-                                profilePictureTexture, profilePicturePath);
+                            loadDefaultProfilePicture( profilePictureTexture, profilePicturePath);
                             matchSummaries.clear();
                             matchHistoryMessage.clear();
                             matchHistoryScroll = 0.f;
                             currentScreen = accountReturnScreen;
                         }
-<<<<<<< HEAD
                         else if (mouseX >= 500.f && mouseX <= 700.f && mouseY >= 585.f && mouseY <= 629.f) {
-=======
-                        else if (mouseX >= 500.f && mouseX <= 700.f &&
-                                 mouseY >= 585.f && mouseY <= 629.f) {
->>>>>>> 8fd8e072799f2eddd740f9df2efbb218d6c1a82c
                             profilePicturePickerOpen = false;
                             currentScreen = accountReturnScreen;
                         }
                         continue;
                     }
 
-<<<<<<< HEAD
                     if (mouseX >= 370.f && mouseX <= 830.f && mouseY >= 250.f && mouseY <= 304.f) {
                         accountPasswordField = false;
                     }
@@ -538,39 +492,13 @@ void ChessUI::handleEvents() {
                         submitAccountForm();
                     }
                     else if (mouseX >= 500.f && mouseX <= 700.f && mouseY >= 620.f && mouseY <= 670.f) {
-=======
-                    if (mouseX >= 370.f && mouseX <= 830.f &&
-                        mouseY >= 250.f && mouseY <= 304.f) {
-                        accountPasswordField = false;
-                    }
-                    else if (mouseX >= 370.f && mouseX <= 830.f &&
-                             mouseY >= 349.f && mouseY <= 403.f) {
-                        accountPasswordField = true;
-                    }
-                    else if (mouseX >= 370.f && mouseX <= 830.f &&
-                             mouseY >= 425.f && mouseY <= 473.f) {
-                        accountSignUpMode = !accountSignUpMode;
-                        accountMessage.clear();
-                    }
-                    else if (mouseX >= 430.f && mouseX <= 770.f &&
-                             mouseY >= 530.f && mouseY <= 586.f) {
-                        submitAccountForm();
-                    }
-                    else if (mouseX >= 500.f && mouseX <= 700.f &&
-                             mouseY >= 620.f && mouseY <= 670.f) {
->>>>>>> 8fd8e072799f2eddd740f9df2efbb218d6c1a82c
                         currentScreen = accountReturnScreen;
                     }
                     continue;
                 }
 
                 if (currentScreen == Screen::MatchHistory) {
-<<<<<<< HEAD
                     if (mouseX >= 500.f && mouseX <= 700.f && mouseY >= 665.f && mouseY <= 720.f) {
-=======
-                    if (mouseX >= 500.f && mouseX <= 700.f &&
-                        mouseY >= 665.f && mouseY <= 720.f) {
->>>>>>> 8fd8e072799f2eddd740f9df2efbb218d6c1a82c
                         currentScreen = matchHistoryReturnScreen;
                     }
                     continue;
@@ -588,42 +516,22 @@ void ChessUI::handleEvents() {
                 }
 
                 if (currentScreen == Screen::MainMenu) {
-<<<<<<< HEAD
                     if (mouseX >= 440.f && mouseX <= 760.f && mouseY >= 220.f && mouseY <= 280.f) {
-=======
-                    if (mouseX >= 440.f && mouseX <= 760.f &&
-                        mouseY >= 220.f && mouseY <= 280.f) {
->>>>>>> 8fd8e072799f2eddd740f9df2efbb218d6c1a82c
                         playSound(uiClickSoundBuffer);
                         startGame(-1, GameMode::PlayerVsPlayer);
                     }
 
-<<<<<<< HEAD
                     else if (mouseX >= 440.f && mouseX <= 760.f && mouseY >= 288.f && mouseY <= 348.f) {
-=======
-                    else if (mouseX >= 440.f && mouseX <= 760.f &&
-                             mouseY >= 288.f && mouseY <= 348.f) {
->>>>>>> 8fd8e072799f2eddd740f9df2efbb218d6c1a82c
                         playSound(uiClickSoundBuffer);
                         currentScreen = Screen::ChooseSide;
                     }
 
-<<<<<<< HEAD
                     else if (mouseX >= 440.f && mouseX <= 760.f && mouseY >= 356.f && mouseY <= 416.f) {
-=======
-                    else if (mouseX >= 440.f && mouseX <= 760.f &&
-                             mouseY >= 356.f && mouseY <= 416.f) {
->>>>>>> 8fd8e072799f2eddd740f9df2efbb218d6c1a82c
                         playSound(uiClickSoundBuffer);
                         startGame(-1, GameMode::EngineVsEngine);
                     }
 
-<<<<<<< HEAD
                     else if (mouseX >= 440.f && mouseX <= 760.f && mouseY >= 424.f && mouseY <= 484.f) {
-=======
-                    else if (mouseX >= 440.f && mouseX <= 760.f &&
-                             mouseY >= 424.f && mouseY <= 484.f) {
->>>>>>> 8fd8e072799f2eddd740f9df2efbb218d6c1a82c
                         playSound(uiClickSoundBuffer);
                         previousScreen = Screen::MainMenu;
                         settingsTab = 0;
@@ -657,8 +565,7 @@ void ChessUI::handleEvents() {
 
                     for (int i = 0; i < 4; ++i) {
                         const float x = optionX + i * optionStep;
-                        if (mouseX >= x && mouseX < x + optionSize &&
-                            mouseY >= optionY && mouseY < optionY + optionSize) {
+                        if (mouseX >= x && mouseX < x + optionSize && mouseY >= optionY && mouseY < optionY + optionSize) {
                             chosenPiece = pieces[i];
                             break;
                         }
@@ -667,12 +574,7 @@ void ChessUI::handleEvents() {
                     if (chosenPiece != 0) {
                         playSound(uiClickSoundBuffer);
 
-                        if (applyMove(
-                                promotionFromRow,
-                                promotionFromCol,
-                                promotionToRow,
-                                promotionToCol,
-                                chosenPiece)) {
+                        if (applyMove( promotionFromRow, promotionFromCol, promotionToRow, promotionToCol, chosenPiece)) {
                             if (currentScreen == Screen::Promotion)
                                 currentScreen = Screen::Game;
                         }
@@ -682,32 +584,17 @@ void ChessUI::handleEvents() {
                 }
 
                 if (currentScreen == Screen::Settings) {
-<<<<<<< HEAD
                     if (mouseX >= 28.f && mouseX <= 64.f && mouseY >= 30.f && mouseY <= 78.f) {
-=======
-                    if (mouseX >= 28.f && mouseX <= 64.f &&
-                        mouseY >= 30.f && mouseY <= 78.f) {
->>>>>>> 8fd8e072799f2eddd740f9df2efbb218d6c1a82c
                         playSound(uiClickSoundBuffer);
                         currentScreen = previousScreen;
                     }
 
-<<<<<<< HEAD
                     else if (mouseX >= 812.f && mouseX <= 952.f && mouseY >= 42.f && mouseY <= 80.f) {
-=======
-                    else if (mouseX >= 812.f && mouseX <= 952.f &&
-                        mouseY >= 42.f && mouseY <= 80.f) {
->>>>>>> 8fd8e072799f2eddd740f9df2efbb218d6c1a82c
                         playSound(uiClickSoundBuffer);
                         settingsTab = 0;
                     }
 
-<<<<<<< HEAD
                     else if (mouseX >= 962.f && mouseX <= 1102.f && mouseY >= 42.f && mouseY <= 80.f) {
-=======
-                    else if (mouseX >= 962.f && mouseX <= 1102.f &&
-                             mouseY >= 42.f && mouseY <= 80.f) {
->>>>>>> 8fd8e072799f2eddd740f9df2efbb218d6c1a82c
                         playSound(uiClickSoundBuffer);
                         settingsTab = 1;
                         refreshPieceThemes();
@@ -716,12 +603,7 @@ void ChessUI::handleEvents() {
 
                     else if (settingsTab == 0) {
                         auto clickedGameplayRow = [&](float y) {
-<<<<<<< HEAD
                             return mouseX >= 290.f && mouseX <= 910.f && mouseY >= y && mouseY <= y + 48.f;
-=======
-                            return mouseX >= 290.f && mouseX <= 910.f &&
-                                   mouseY >= y && mouseY <= y + 48.f;
->>>>>>> 8fd8e072799f2eddd740f9df2efbb218d6c1a82c
                         };
 
                         if (clickedGameplayRow(220.f)) {
@@ -813,8 +695,7 @@ void ChessUI::handleEvents() {
                             if (y + boardCardHeight > 625.f)
                                 break;
 
-                            if (mouseX >= x && mouseX <= x + boardCardWidth &&
-                                mouseY >= y && mouseY <= y + boardCardHeight) {
+                            if (mouseX >= x && mouseX <= x + boardCardWidth && mouseY >= y && mouseY <= y + boardCardHeight) {
                                 playSound(uiClickSoundBuffer);
                                 boardTheme = i;
                                 loadBoardTextures();
@@ -823,13 +704,7 @@ void ChessUI::handleEvents() {
                         }
                     }
 
-                    if (gameStarted &&
-<<<<<<< HEAD
-                        mouseX >= 350.f && mouseX <= 500.f && mouseY >= 662.f && mouseY <= 704.f) {
-=======
-                        mouseX >= 350.f && mouseX <= 500.f &&
-                        mouseY >= 662.f && mouseY <= 704.f) {
->>>>>>> 8fd8e072799f2eddd740f9df2efbb218d6c1a82c
+                    if (gameStarted && mouseX >= 350.f && mouseX <= 500.f && mouseY >= 662.f && mouseY <= 704.f) {
                         playSound(uiClickSoundBuffer);
                         int engineSide = game.get_engine_side();
                         GameMode mode = gameMode;
@@ -837,16 +712,14 @@ void ChessUI::handleEvents() {
                         continue;
                     }
 
-                    if (mouseX >= 525.f && mouseX <= 675.f &&
-                        mouseY >= 662.f && mouseY <= 704.f) {
+                    if (mouseX >= 525.f && mouseX <= 675.f && mouseY >= 662.f && mouseY <= 704.f) {
                         playSound(uiClickSoundBuffer);
                         currentScreen = Screen::MainMenu;
                         hoveredHistoryNode = -1;
                         continue;
                     }
 
-                    if (mouseX >= 700.f && mouseX <= 850.f &&
-                        mouseY >= 662.f && mouseY <= 704.f) {
+                    if (mouseX >= 700.f && mouseX <= 850.f && mouseY >= 662.f && mouseY <= 704.f) {
                         playSound(uiClickSoundBuffer);
                         currentScreen = previousScreen;
                         continue;
@@ -856,8 +729,7 @@ void ChessUI::handleEvents() {
                 }
 
                 if (currentScreen == Screen::EndGame) {
-                    if (mouseX >= 390.f && mouseX <= 590.f &&
-                        mouseY >= 500.f && mouseY <= 565.f) {
+                    if (mouseX >= 390.f && mouseX <= 590.f && mouseY >= 500.f && mouseY <= 565.f) {
                         playSound(uiClickSoundBuffer);
                         int engineSide = game.get_engine_side();
                         GameMode mode = gameMode;
@@ -865,8 +737,7 @@ void ChessUI::handleEvents() {
                         continue;
                     }
 
-                    if (mouseX >= 610.f && mouseX <= 810.f &&
-                        mouseY >= 500.f && mouseY <= 565.f) {
+                    if (mouseX >= 610.f && mouseX <= 810.f && mouseY >= 500.f && mouseY <= 565.f) {
                         playSound(uiClickSoundBuffer);
                         previousScreen = Screen::EndGame;
                         currentScreen = Screen::Settings;
@@ -874,8 +745,7 @@ void ChessUI::handleEvents() {
                         continue;
                     }
 
-                    if (mouseX >= 500.f && mouseX <= 700.f &&
-                        mouseY >= 590.f && mouseY <= 650.f) {
+                    if (mouseX >= 500.f && mouseX <= 700.f && mouseY >= 590.f && mouseY <= 650.f) {
                         playSound(uiClickSoundBuffer);
                         currentScreen = Screen::MainMenu;
                         continue;
@@ -887,17 +757,14 @@ void ChessUI::handleEvents() {
                 if (currentScreen != Screen::Game || engineMoveAnimating)
                     continue;
 
-                if (mouseX >= topFlipX && mouseX <= topFlipX + 74.f &&
-                    mouseY >= 20.f && mouseY <= 56.f) {
+                if (mouseX >= topFlipX && mouseX <= topFlipX + 74.f && mouseY >= 20.f && mouseY <= 56.f) {
                     playSound(uiClickSoundBuffer);
                     manualBoardFlip = !manualBoardFlip;
                     clearSelection();
                     continue;
                 }
 
-                if (historyPaused &&
-                    mouseX >= topPlayX && mouseX <= topPlayX + 70.f &&
-                    mouseY >= 20.f && mouseY <= 56.f) {
+                if (historyPaused && mouseX >= topPlayX && mouseX <= topPlayX + 70.f && mouseY >= 20.f && mouseY <= 56.f) {
                     playSound(uiClickSoundBuffer);
                     historyPaused = false;
                     engineStalled = false;
@@ -907,8 +774,7 @@ void ChessUI::handleEvents() {
                     continue;
                 }
 
-                if (mouseX >= topSettingsX && mouseX <= topSettingsX + 160.f &&
-                    mouseY >= 20.f && mouseY <= 56.f) {
+                if (mouseX >= topSettingsX && mouseX <= topSettingsX + 160.f && mouseY >= 20.f && mouseY <= 56.f) {
                     playSound(uiClickSoundBuffer);
                     previousScreen = Screen::Game;
                     settingsTab = 0;
@@ -927,8 +793,7 @@ void ChessUI::handleEvents() {
                     float nodeX = historyPositions[i].x;
                     float nodeY = historyPositions[i].y - historyScroll;
 
-                    if (mouseX >= nodeX && mouseX <= nodeX + iconSize &&
-                        mouseY >= nodeY && mouseY <= nodeY + iconSize)
+                    if (mouseX >= nodeX && mouseX <= nodeX + iconSize && mouseY >= nodeY && mouseY <= nodeY + iconSize)
                     {
                         playSound(uiClickSoundBuffer);
                         currentHistoryNode = i;
@@ -944,14 +809,9 @@ void ChessUI::handleEvents() {
                     }
                 }
 
-                if (clickedHistory ||
-                    historyPaused ||
-                    gameMode == GameMode::EngineVsEngine ||
-                    game.is_engine_turn() ||
-                    game.has_game_ended()) continue;
+                if (clickedHistory || historyPaused || gameMode == GameMode::EngineVsEngine || game.is_engine_turn() || game.has_game_ended()) continue;
 
-                if (mouseX < boardX || mouseX >= boardX + boardSize ||
-                    mouseY < boardY || mouseY >= boardY + boardSize) continue;
+                if (mouseX < boardX || mouseX >= boardX + boardSize || mouseY < boardY || mouseY >= boardY + boardSize) continue;
 
                 int shownCol = static_cast<int>((mouseX - boardX) / squareSize);
                 int shownRow = static_cast<int>((mouseY - boardY) / squareSize);
@@ -1047,10 +907,7 @@ void ChessUI::handleEvents() {
             int newCol = isBoardFlipped() ? 7 - shownCol : shownCol;
             int newRow = isBoardFlipped() ? 7 - shownRow : shownRow;
 
-            if (gameMode != GameMode::EngineVsEngine &&
-                !game.is_engine_turn() && !game.has_game_ended() &&
-                mouseX >= boardX && mouseX < boardX + boardSize &&
-                mouseY >= boardY && mouseY < boardY + boardSize) {
+            if (gameMode != GameMode::EngineVsEngine && !game.is_engine_turn() && !game.has_game_ended() && mouseX >= boardX && mouseX < boardX + boardSize && mouseY >= boardY && mouseY < boardY + boardSize) {
                 applyMove(draggedRow, draggedCol, newRow, newCol);
             }
 
@@ -1133,10 +990,7 @@ void ChessUI::draw() {
 
     if (!dragPieces && pieceSelected) {
         sf::RectangleShape selectedSquare( sf::Vector2f(squareSize - 6.f, squareSize - 6.f) );
-        selectedSquare.setPosition({
-            static_cast<float>(boardX + displayCol(selectedCol) * squareSize + 3),
-            static_cast<float>(boardY + displayRow(selectedRow) * squareSize + 3)
-        });
+        selectedSquare.setPosition({ static_cast<float>(boardX + displayCol(selectedCol) * squareSize + 3), static_cast<float>(boardY + displayRow(selectedRow) * squareSize + 3) });
         selectedSquare.setFillColor(sf::Color::Transparent);
         selectedSquare.setOutlineColor(sf::Color(255, 215, 0));
         selectedSquare.setOutlineThickness(4.f);
@@ -1204,8 +1058,7 @@ void ChessUI::drawPromotionDialog() {
 
     const int pieces[4] = {5, 4, 3, 2};
     int side = 1;
-    if (promotionFromRow >= 0 && promotionFromRow < 8 &&
-        promotionFromCol >= 0 && promotionFromCol < 8) {
+    if (promotionFromRow >= 0 && promotionFromRow < 8 && promotionFromCol >= 0 && promotionFromCol < 8) {
         const int pawn = (*(game.begin() + promotionFromRow))[promotionFromCol];
         side = pawn < 0 ? -1 : 1;
     }
@@ -1216,10 +1069,8 @@ void ChessUI::drawPromotionDialog() {
 
         sf::RectangleShape option({84.f, 84.f});
         option.setPosition({x, y});
-        const bool hovered = mousePosition.x >= x && mousePosition.x <= x + 84.f &&
-            mousePosition.y >= y && mousePosition.y <= y + 84.f;
-        option.setFillColor(hovered
-            ? sf::Color(105, 91, 55) : sf::Color(70, 70, 70));
+        const bool hovered = mousePosition.x >= x && mousePosition.x <= x + 84.f && mousePosition.y >= y && mousePosition.y <= y + 84.f;
+        option.setFillColor(hovered ? sf::Color(105, 91, 55) : sf::Color(70, 70, 70));
         option.setOutlineColor(sf::Color(210, 190, 120));
         option.setOutlineThickness(2.f);
         window.draw(option);
@@ -1230,8 +1081,7 @@ void ChessUI::drawPromotionDialog() {
         const float maxSize = static_cast<float>(std::max(size.x, size.y));
         const float scale = 58.f / maxSize;
         piece.setScale({scale, scale});
-        piece.setPosition({x + (84.f - size.x * scale) / 2.f,
-            y + (84.f - size.y * scale) / 2.f});
+        piece.setPosition({x + (84.f - size.x * scale) / 2.f, y + (84.f - size.y * scale) / 2.f});
         window.draw(piece);
     }
 }
@@ -1249,10 +1099,7 @@ void ChessUI::drawCoverTexture(const sf::Texture& texture) {
     float width = textureSize.x * scale;
     float height = textureSize.y * scale;
 
-    background.setPosition({
-        (windowWidth - width) / 2.f,
-        (windowHeight - height) / 2.f
-    });
+    background.setPosition({ (windowWidth - width) / 2.f, (windowHeight - height) / 2.f });
 
     window.draw(background);
 }
@@ -1336,12 +1183,7 @@ void ChessUI::drawMainMenu() {
     const float buttonWidth = 300.f;
     const float buttonHeight = 56.f;
     const float buttonX = 450.f;
-    const char* labels[] = {
-        "PLAYER VS PLAYER",
-        "PLAYER VS ENGINE",
-        "ENGINE VS ENGINE",
-        "SETTINGS"
-    };
+    const char* labels[] = {"PLAYER VS PLAYER", "PLAYER VS ENGINE", "ENGINE VS ENGINE", "SETTINGS"};
     const float firstY = 220.f;
     const float stepY = 68.f;
 
@@ -1498,16 +1340,13 @@ void ChessUI::drawAccountScreen() {
     sf::RectangleShape usernameBox({460.f, 54.f});
     usernameBox.setPosition({370.f, 250.f});
     usernameBox.setFillColor(sf::Color(27, 27, 27));
-    usernameBox.setOutlineColor(accountPasswordField
-        ? sf::Color(95, 95, 95) : sf::Color(230, 190, 90));
+    usernameBox.setOutlineColor(accountPasswordField ? sf::Color(95, 95, 95) : sf::Color(230, 190, 90));
     usernameBox.setOutlineThickness(2.f);
     window.draw(usernameBox);
 
-    sf::Text username(font,
-        accountInput.empty() ? "Enter username" : accountInput, 18);
+    sf::Text username(font, accountInput.empty() ? "Enter username" : accountInput, 18);
     username.setPosition({388.f, 266.f});
-    username.setFillColor(accountInput.empty()
-        ? sf::Color(145, 145, 145) : sf::Color::White);
+    username.setFillColor(accountInput.empty() ? sf::Color(145, 145, 145) : sf::Color::White);
     window.draw(username);
 
     sf::Text passwordLabel(font, "Password", 18);
@@ -1518,8 +1357,7 @@ void ChessUI::drawAccountScreen() {
     sf::RectangleShape passwordBox({460.f, 54.f});
     passwordBox.setPosition({370.f, 349.f});
     passwordBox.setFillColor(sf::Color(27, 27, 27));
-    passwordBox.setOutlineColor(accountPasswordField
-        ? sf::Color(230, 190, 90) : sf::Color(95, 95, 95));
+    passwordBox.setOutlineColor(accountPasswordField ? sf::Color(230, 190, 90) : sf::Color(95, 95, 95));
     passwordBox.setOutlineThickness(2.f);
     window.draw(passwordBox);
 
@@ -1527,8 +1365,7 @@ void ChessUI::drawAccountScreen() {
         ? "Enter password" : std::string(accountPassword.size(), '*');
     sf::Text password(font, maskedPassword, 18);
     password.setPosition({388.f, 365.f});
-    password.setFillColor(accountPassword.empty()
-        ? sf::Color(145, 145, 145) : sf::Color::White);
+    password.setFillColor(accountPassword.empty() ? sf::Color(145, 145, 145) : sf::Color::White);
     window.draw(password);
 
     sf::RectangleShape modeButton({460.f, 48.f});
@@ -1536,8 +1373,7 @@ void ChessUI::drawAccountScreen() {
     modeButton.setFillColor(sf::Color(58, 58, 58));
     window.draw(modeButton);
 
-    sf::Text modeText(font, accountSignUpMode
-        ? "Already registered? Sign in" : "New here? Create an account", 17);
+    sf::Text modeText(font, accountSignUpMode ? "Already registered? Sign in" : "New here? Create an account", 17);
     modeText.setPosition({435.f, 439.f});
     modeText.setFillColor(sf::Color::White);
     window.draw(modeText);
@@ -1547,8 +1383,7 @@ void ChessUI::drawAccountScreen() {
         : (authHandler ? "" : "Default account: jarvis / jarvis1234");
     sf::Text statusText(font, status, 14);
     statusText.setPosition({370.f, 487.f});
-    statusText.setFillColor(accountMessage.empty()
-        ? sf::Color(190, 190, 190) : sf::Color(245, 190, 120));
+    statusText.setFillColor(accountMessage.empty() ? sf::Color(190, 190, 190) : sf::Color(245, 190, 120));
     window.draw(statusText);
 
     sf::RectangleShape submitButton({340.f, 56.f});
@@ -1616,8 +1451,7 @@ void ChessUI::drawProfilePicturePicker() {
         const bool selected = profilePictureOptions[i] == profilePicturePath;
         sf::RectangleShape choice({cardWidth, cardHeight});
         choice.setPosition({x, y});
-        choice.setFillColor(selected
-            ? sf::Color(82, 115, 82) : sf::Color(58, 58, 58));
+        choice.setFillColor(selected ? sf::Color(82, 115, 82) : sf::Color(58, 58, 58));
         if (selected) {
             choice.setOutlineColor(sf::Color::White);
             choice.setOutlineThickness(2.f);
@@ -1625,8 +1459,7 @@ void ChessUI::drawProfilePicturePicker() {
         window.draw(choice);
 
         sf::CircleShape picture(30.f);
-        picture.setPosition({x + (cardWidth - 60.f) / 2.f,
-            y + (cardHeight - 60.f) / 2.f});
+        picture.setPosition({x + (cardWidth - 60.f) / 2.f, y + (cardHeight - 60.f) / 2.f});
         picture.setFillColor(sf::Color::White);
         picture.setTexture(&profilePictureOptionTextures[i]);
         window.draw(picture);
@@ -1652,8 +1485,7 @@ void ChessUI::drawMatchHistoryScreen() {
     title.setFillColor(sf::Color::White);
     window.draw(title);
 
-    sf::Text count(font,
-        "Matches: " + std::to_string(matchSummaries.size()), 17);
+    sf::Text count(font, "Matches: " + std::to_string(matchSummaries.size()), 17);
     count.setPosition({285.f, 165.f});
     count.setFillColor(sf::Color(210, 210, 210));
     window.draw(count);
@@ -1666,9 +1498,7 @@ void ChessUI::drawMatchHistoryScreen() {
     if (matchSummaries.empty()) {
         const std::string emptyMessage = !matchHistoryMessage.empty()
             ? matchHistoryMessage
-            : (matchHistoryProvider
-                ? "No matches have been recorded yet."
-                : "Match history is not connected yet.");
+            : (matchHistoryProvider ? "No matches have been recorded yet." : "Match history is not connected yet.");
         sf::Text empty(font, emptyMessage, 22);
         empty.setPosition({365.f, 340.f});
         empty.setFillColor(sf::Color(200, 200, 200));
@@ -1699,17 +1529,11 @@ void ChessUI::drawMatchHistoryScreen() {
 
             sf::RectangleShape row({650.f, 42.f});
             row.setPosition({tableX, y});
-            row.setFillColor(i % 2 == 0
-                ? sf::Color(48, 48, 48) : sf::Color(39, 39, 39));
+            row.setFillColor(i % 2 == 0 ? sf::Color(48, 48, 48) : sf::Color(39, 39, 39));
             window.draw(row);
 
             const MatchSummary& match = matchSummaries[i];
-            const std::string values[] = {
-                shortText(match.date.empty() ? "-" : match.date, 12),
-                shortText(match.white, 18),
-                shortText(match.black, 18),
-                shortText(match.result, 14)
-            };
+            const std::string values[] = {shortText(match.date.empty() ? "-" : match.date, 12), shortText(match.white, 18), shortText(match.black, 18), shortText(match.result, 14)};
             for (int col = 0; col < 4; ++col) {
                 sf::Text value(font, values[col], 15);
                 value.setPosition({columns[col], y + 13.f});
@@ -1719,9 +1543,7 @@ void ChessUI::drawMatchHistoryScreen() {
         }
 
         if (matchSummaries.size() > 8) {
-            sf::Text more(font,
-                "Scroll to view all " +
-                    std::to_string(matchSummaries.size()) + " matches.", 14);
+            sf::Text more(font, "Scroll to view all " + std::to_string(matchSummaries.size()) + " matches.", 14);
             more.setPosition({475.f, 640.f});
             more.setFillColor(sf::Color(190, 190, 190));
             window.draw(more);
@@ -1745,8 +1567,7 @@ void ChessUI::submitAccountForm() {
         return;
     }
 
-    const bool defaultAccount = !accountSignUpMode &&
-        accountInput == "jarvis" && accountPassword == "jarvis1234";
+    const bool defaultAccount = !accountSignUpMode && accountInput == "jarvis" && accountPassword == "jarvis1234";
 
     if (!defaultAccount && !authHandler) {
         accountMessage = accountSignUpMode
@@ -1801,9 +1622,7 @@ void ChessUI::loadProfilePictureOptions() {
 }
 
 bool ChessUI::isBoardFlipped() const {
-    bool automaticFlip =
-        gameMode == GameMode::PlayerVsEngine &&
-        game.get_engine_side() == 1;
+    bool automaticFlip = gameMode == GameMode::PlayerVsEngine && game.get_engine_side() == 1;
 
     return automaticFlip != manualBoardFlip;
 }
@@ -1824,10 +1643,7 @@ void ChessUI::drawBoard() {
 
             sf::Sprite tile(tileTexture);
             const sf::Vector2u size = tileTexture.getSize();
-            tile.setScale({
-                static_cast<float>(squareSize) / size.x,
-                static_cast<float>(squareSize) / size.y
-            });
+            tile.setScale({ static_cast<float>(squareSize) / size.x, static_cast<float>(squareSize) / size.y });
             tile.setPosition({x, y});
             window.draw(tile);
         }
@@ -1858,8 +1674,7 @@ void ChessUI::drawLastMoveHighlights() {
         const MoveHistoryEntry& previous = historyTree[parent].move;
         const bool sameSide = (previous.piece > 0) == (last.piece > 0);
 
-        if (sameSide &&
-            previous.toRow == last.fromRow && previous.toCol == last.fromCol) {
+        if (sameSide && previous.toRow == last.fromRow && previous.toCol == last.fromCol) {
             drawSquare(previous.fromRow, previous.fromCol, sourceYellow);
             drawSquare(previous.toRow, previous.toCol, destinationOrange);
             drawSquare(last.toRow, last.toCol, finalDarkOrange);
@@ -1888,30 +1703,6 @@ void ChessUI::drawSidePanel() {
 }
 
 void ChessUI::drawText() {
-    std::string mode;
-
-    if (gameMode == GameMode::PlayerVsPlayer) {
-        mode = "Player vs Player";
-    }
-
-    else if (gameMode == GameMode::PlayerVsEngine) {
-        if (game.get_engine_side() == 0)
-            mode = "Player vs Engine | Player: Black";
-        else
-            mode = "Player vs Engine | Player: White";
-    }
-
-    else {
-        mode = "Engine vs Engine";
-    }
-    std::string turnText = game.get_current_turn() == 0 ? "White" : "Black";
-    std::string status = game.has_game_ended() ? "Game ended" :
-        turnText + " to move (" + std::to_string(game.get_moves_left()) + " actions left)";
-    if (engineStalled) status = "Engine has no legal move";
-    sf::Text turnLabel(font, mode + " | " + status, 20);
-    turnLabel.setPosition({static_cast<float>(boardX), 35.f});
-    window.draw(turnLabel);
-
     sf::Text historyTitle(font, "MOVE HISTORY", 28);
     historyTitle.setPosition({sidePanelX + 20.f, sidePanelY + 20.f});
     historyTitle.setFillColor(sf::Color::White);
@@ -1926,8 +1717,7 @@ void ChessUI::drawPieces() {
         int col = 0;
         for (auto& piece : boardRow) {
             if (piece != 0) {
-                if (engineMoveAnimating &&
-                    row == animatedFromRow && col == animatedFromCol) {
+                if (engineMoveAnimating && row == animatedFromRow && col == animatedFromCol) {
                     col++;
                     continue;
                 }
@@ -1965,9 +1755,7 @@ void ChessUI::drawPieces() {
         auto textureSize =
             pieceTextures[draggedPiece].getSize();
 
-        float maxSize = static_cast<float>(
-            std::max(textureSize.x, textureSize.y)
-        );
+        float maxSize = static_cast<float>( std::max(textureSize.x, textureSize.y) );
 
         float scale = 120.f / maxSize;
 
@@ -1976,10 +1764,7 @@ void ChessUI::drawPieces() {
         float width = textureSize.x * scale;
         float height = textureSize.y * scale;
 
-        sprite.setPosition({
-            mousePosition.x - width / 2.f,
-            mousePosition.y - height / 2.f
-        });
+        sprite.setPosition({ mousePosition.x - width / 2.f, mousePosition.y - height / 2.f });
 
         window.draw(sprite);
     }
@@ -1987,37 +1772,23 @@ void ChessUI::drawPieces() {
     if (engineMoveAnimating && animatedPiece != 0) {
         sf::Texture& texture = pieceTextures[animatedPiece];
         const sf::Vector2u textureSize = texture.getSize();
-        const float maxSize = static_cast<float>(
-            std::max(textureSize.x, textureSize.y));
+        const float maxSize = static_cast<float>( std::max(textureSize.x, textureSize.y));
         sf::Sprite sprite(texture);
         const float scale = 64.f / maxSize;
         const float width = textureSize.x * scale;
         const float height = textureSize.y * scale;
-        const float progress = std::clamp(
-            engineAnimationClock.getElapsedTime().asSeconds() /
-                engineSlideSeconds,
-            0.f, 1.f);
+        const float progress = std::clamp( engineAnimationClock.getElapsedTime().asSeconds() / engineSlideSeconds, 0.f, 1.f);
 
-        const sf::Vector2f from{
-            boardX + displayCol(animatedFromCol) * squareSize + squareSize / 2.f,
-            boardY + displayRow(animatedFromRow) * squareSize + squareSize / 2.f};
-        const sf::Vector2f to{
-            boardX + displayCol(animatedToCol) * squareSize + squareSize / 2.f,
-            boardY + displayRow(animatedToRow) * squareSize + squareSize / 2.f};
+        const sf::Vector2f from{boardX + displayCol(animatedFromCol) * squareSize + squareSize / 2.f, boardY + displayRow(animatedFromRow) * squareSize + squareSize / 2.f};
+        const sf::Vector2f to{boardX + displayCol(animatedToCol) * squareSize + squareSize / 2.f, boardY + displayRow(animatedToRow) * squareSize + squareSize / 2.f};
         sprite.setScale({scale, scale});
-        sprite.setPosition({
-            from.x + (to.x - from.x) * progress - width / 2.f,
-            from.y + (to.y - from.y) * progress - height / 2.f});
+        sprite.setPosition({ from.x + (to.x - from.x) * progress - width / 2.f, from.y + (to.y - from.y) * progress - height / 2.f});
         window.draw(sprite);
     }
 }
 
 void ChessUI::refreshPieceThemes() {
-    pieceThemeFolders = {
-        "assets/pieces/",
-        "assets/pieces2/",
-        "assets/pieces3/"
-    };
+    pieceThemeFolders = {"assets/pieces/", "assets/pieces2/", "assets/pieces3/"};
     pieceThemeKings.clear();
 
     for (const std::string& folder : pieceThemeFolders) {
@@ -2028,11 +1799,7 @@ void ChessUI::refreshPieceThemes() {
 }
 
 void ChessUI::refreshBoardThemes() {
-    boardThemeFolders = {
-        "assets/board/",
-        "assets/board1/",
-        "assets/board2/"
-    };
+    boardThemeFolders = {"assets/board/", "assets/board1/", "assets/board2/"};
     boardWhitePreviews.clear();
     boardBlackPreviews.clear();
 
@@ -2180,10 +1947,7 @@ void ChessUI::drawMoveHistory() {
             float width = textureSize.x * scale;
             float height = textureSize.y * scale;
 
-            sprite.setPosition({
-                x + (iconSize - width) / 2.f,
-                y + (iconSize - height) / 2.f
-            });
+            sprite.setPosition({ x + (iconSize - width) / 2.f, y + (iconSize - height) / 2.f });
 
             window.draw(sprite);
         }
@@ -2202,10 +1966,7 @@ void ChessUI::drawMoveHistory() {
     float contentRight = sidePanelX + 20.f;
 
     for (const auto& pos : positionsForScroll) {
-        contentRight = std::max(
-            contentRight,
-            pos.x + historyHorizontalScroll + 45.f
-        );
+        contentRight = std::max( contentRight, pos.x + historyHorizontalScroll + 45.f );
     }
 
     const float visibleLeft = sidePanelX + 20.f;
@@ -2254,11 +2015,7 @@ void ChessUI::drawHistoryPreview() {
     const float historyTop = sidePanelY;
     const float historyBottom = sidePanelY + sidePanelHeight;
 
-    bool mouseInsideHistory =
-        mousePosition.x >= historyLeft &&
-        mousePosition.x <= historyRight &&
-        mousePosition.y >= historyTop &&
-        mousePosition.y <= historyBottom;
+    bool mouseInsideHistory = mousePosition.x >= historyLeft && mousePosition.x <= historyRight && mousePosition.y >= historyTop && mousePosition.y <= historyBottom;
 
     if (!mouseInsideHistory) {
         hoveredHistoryNode = -1;
@@ -2284,10 +2041,7 @@ void ChessUI::drawHistoryPreview() {
         if (y < nodeTop || y + iconSize > nodeBottom)
             continue;
 
-        if (mousePosition.x >= x &&
-            mousePosition.x <= x + iconSize &&
-            mousePosition.y >= y &&
-            mousePosition.y <= y + iconSize) {
+        if (mousePosition.x >= x && mousePosition.x <= x + iconSize && mousePosition.y >= y && mousePosition.y <= y + iconSize) {
             hoveredHistoryNode = i;
             break;
         }
@@ -2364,10 +2118,7 @@ std::vector<sf::Vector2f> ChessUI::getHistoryNodePositions() const {
     for (int i = 0; i < static_cast<int>(historyTree.size()); i++) {
         int depth = getHistoryDepth(i);
 
-        positions[i] = {
-            startX + branchColumn[i] * branchSpacing - historyHorizontalScroll,
-            startY + depth * rowSpacing
-        };
+        positions[i] = {startX + branchColumn[i] * branchSpacing - historyHorizontalScroll, startY + depth * rowSpacing};
     }
 
     return positions;
@@ -2389,16 +2140,14 @@ void ChessUI::drawSettings() {
     backArrow.setFillColor(sf::Color(190, 192, 196));
     window.draw(backArrow);
 
-    sf::Text description(font,
-        "Adjust how you move pieces and view the chessboard.", 14);
+    sf::Text description(font, "Adjust how you move pieces and view the chessboard.", 14);
     description.setPosition({74.f, 91.f});
     description.setFillColor(sf::Color(160, 163, 169));
     window.draw(description);
 
     sf::RectangleShape gameplayTab({140.f, 38.f});
     gameplayTab.setPosition({812.f, 42.f});
-    gameplayTab.setFillColor(settingsTab == 0
-        ? sf::Color(46, 47, 50) : sf::Color(25, 26, 28));
+    gameplayTab.setFillColor(settingsTab == 0 ? sf::Color(46, 47, 50) : sf::Color(25, 26, 28));
     gameplayTab.setOutlineColor(sf::Color(55, 57, 61));
     gameplayTab.setOutlineThickness(1.f);
     window.draw(gameplayTab);
@@ -2410,8 +2159,7 @@ void ChessUI::drawSettings() {
 
     sf::RectangleShape designTab({140.f, 38.f});
     designTab.setPosition({962.f, 42.f});
-    designTab.setFillColor(settingsTab == 1
-        ? sf::Color(46, 47, 50) : sf::Color(25, 26, 28));
+    designTab.setFillColor(settingsTab == 1 ? sf::Color(46, 47, 50) : sf::Color(25, 26, 28));
     designTab.setOutlineColor(sf::Color(55, 57, 61));
     designTab.setOutlineThickness(1.f);
     window.draw(designTab);
@@ -2472,13 +2220,11 @@ void ChessUI::drawGameplaySettings() {
         window.draw(separator);
     };
 
-    auto drawToggle = [&](const std::string& label, bool enabled, float y,
-                          bool slideHint = false) {
+    auto drawToggle = [&](const std::string& label, bool enabled, float y, bool slideHint = false) {
         drawRow(label, y, slideHint);
 
         if (slideHint) {
-            sf::Text hint(font,
-                "Click and engine moves slide; dragging stays direct.", 12);
+            sf::Text hint(font, "Click and engine moves slide; dragging stays direct.", 12);
             hint.setPosition({315.f, y + 29.f});
             hint.setFillColor(sf::Color(170, 174, 181));
             window.draw(hint);
@@ -2486,12 +2232,8 @@ void ChessUI::drawGameplaySettings() {
 
         sf::RectangleShape toggle({86.f, 30.f});
         toggle.setPosition({824.f, y + 9.f});
-        toggle.setFillColor(enabled
-            ? sf::Color(63, 128, 78)
-            : sf::Color(78, 82, 88));
-        toggle.setOutlineColor(enabled
-            ? sf::Color(91, 157, 104)
-            : sf::Color(104, 108, 114));
+        toggle.setFillColor(enabled ? sf::Color(63, 128, 78) : sf::Color(78, 82, 88));
+        toggle.setOutlineColor(enabled ? sf::Color(91, 157, 104) : sf::Color(104, 108, 114));
         toggle.setOutlineThickness(1.f);
         window.draw(toggle);
 
@@ -2515,13 +2257,8 @@ void ChessUI::drawGameplaySettings() {
     historyToggle.setOutlineThickness(1.f);
     window.draw(historyToggle);
 
-    sf::Text historyState(
-        font,
-        historyStyle == HistoryStyle::Pictogram ? "ICONS" : "TEXT",
-        12
-    );
-    historyState.setPosition({historyStyle == HistoryStyle::Pictogram ? 847.f : 851.f,
-                              507.f});
+    sf::Text historyState( font, historyStyle == HistoryStyle::Pictogram ? "ICONS" : "TEXT", 12 );
+    historyState.setPosition({historyStyle == HistoryStyle::Pictogram ? 847.f : 851.f, 507.f});
     historyState.setFillColor(sf::Color::White);
     window.draw(historyState);
 
@@ -2553,11 +2290,7 @@ void ChessUI::drawDesignSettings() {
 
         sf::RectangleShape card({pieceCardWidth, pieceCardHeight});
         card.setPosition({x, y});
-        card.setFillColor(
-            i == pieceTheme
-            ? sf::Color(82, 115, 82)
-            : sf::Color(58, 58, 58)
-        );
+        card.setFillColor( i == pieceTheme ? sf::Color(82, 115, 82) : sf::Color(58, 58, 58) );
 
         if (i == pieceTheme) {
             card.setOutlineColor(sf::Color::White);
@@ -2573,10 +2306,7 @@ void ChessUI::drawDesignSettings() {
         king.setScale({scale, scale});
         const float width = size.x * scale;
         const float height = size.y * scale;
-        king.setPosition({
-            x + (pieceCardWidth - width) / 2.f,
-            y + (pieceCardHeight - height) / 2.f
-        });
+        king.setPosition({ x + (pieceCardWidth - width) / 2.f, y + (pieceCardHeight - height) / 2.f });
         window.draw(king);
     }
 
@@ -2604,11 +2334,7 @@ void ChessUI::drawDesignSettings() {
 
         sf::RectangleShape card({boardCardWidth, boardCardHeight});
         card.setPosition({x, y});
-        card.setFillColor(
-            i == boardTheme
-            ? sf::Color(82, 115, 82)
-            : sf::Color(58, 58, 58)
-        );
+        card.setFillColor( i == boardTheme ? sf::Color(82, 115, 82) : sf::Color(58, 58, 58) );
 
         if (i == boardTheme) {
             card.setOutlineColor(sf::Color::White);
@@ -2620,19 +2346,13 @@ void ChessUI::drawDesignSettings() {
         const float previewSize = 32.f;
         sf::Sprite whiteTile(boardWhitePreviews[i]);
         const sf::Vector2u whiteSize = boardWhitePreviews[i].getSize();
-        whiteTile.setScale({
-            previewSize / whiteSize.x,
-            previewSize / whiteSize.y
-        });
+        whiteTile.setScale({ previewSize / whiteSize.x, previewSize / whiteSize.y });
         whiteTile.setPosition({x + 12.f, y + 25.f});
         window.draw(whiteTile);
 
         sf::Sprite blackTile(boardBlackPreviews[i]);
         const sf::Vector2u blackSize = boardBlackPreviews[i].getSize();
-        blackTile.setScale({
-            previewSize / blackSize.x,
-            previewSize / blackSize.y
-        });
+        blackTile.setScale({ previewSize / blackSize.x, previewSize / blackSize.y });
         blackTile.setPosition({x + 46.f, y + 25.f});
         window.draw(blackTile);
     }
@@ -2653,11 +2373,6 @@ void ChessUI::drawEndScreen() {
     title.setPosition({465.f, 235.f});
     title.setFillColor(sf::Color::White);
     window.draw(title);
-
-    sf::Text message(font, "The game has ended.", 24);
-    message.setPosition({477.f, 330.f});
-    message.setFillColor(sf::Color(210, 210, 210));
-    window.draw(message);
 
     sf::RectangleShape playAgain({200.f, 65.f});
     playAgain.setPosition({390.f, 500.f});
@@ -2748,10 +2463,7 @@ void ChessUI::drawCoordinates() {
 
         int shownCol = displayCol(col);
 
-        fileText.setPosition({
-            static_cast<float>(boardX + shownCol * squareSize + squareSize - 14),
-            static_cast<float>(boardY + boardSize - 18)
-        });
+        fileText.setPosition({ static_cast<float>(boardX + shownCol * squareSize + squareSize - 14), static_cast<float>(boardY + boardSize - 18) });
 
         fileText.setFillColor(sf::Color(35, 35, 35, 210));
         window.draw(fileText);
@@ -2764,10 +2476,7 @@ void ChessUI::drawCoordinates() {
 
         int shownRow = displayRow(row);
 
-        rankText.setPosition({
-            static_cast<float>(boardX + 5),
-            static_cast<float>(boardY + shownRow * squareSize + 2)
-        });
+        rankText.setPosition({ static_cast<float>(boardX + 5), static_cast<float>(boardY + shownRow * squareSize + 2) });
 
         rankText.setFillColor(sf::Color(35, 35, 35, 210));
         window.draw(rankText);
