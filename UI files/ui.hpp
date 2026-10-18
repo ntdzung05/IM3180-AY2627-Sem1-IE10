@@ -1,5 +1,6 @@
 #pragma once
 #include "../board.hpp"
+#include "../engine.hpp"
 #include <SFML/Graphics.hpp>
 #include <SFML/Audio.hpp>
 #include <map>
@@ -26,6 +27,7 @@ struct MoveHistoryEntry {
 };
 
 class ChessUI {
+    friend struct ChessUITestAccess;
 
 public:
     struct MatchSummary {
@@ -37,13 +39,18 @@ public:
 
     using AuthHandler = std::function<bool(
         const std::string&, const std::string&, bool)>;
-    using MatchHistoryProvider = std::function<std::vector<MatchSummary>()>;
+    using MatchHistoryProvider = std::function<std::vector<MatchSummary>(const std::string&)>;
+    using MatchRecorder = std::function<void(
+        const std::string&, int, const MatchSummary&, const std::vector<Move>&)>;
 
-    explicit ChessUI(int engineSide = 0, int searchDepth = 2);
+    explicit ChessUI(int engineSide = 1, int searchDepth = Engine::kDefaultSearchDepth,
+                     std::unique_ptr<Evaluator> whiteEvaluator = nullptr,
+                     std::unique_ptr<Evaluator> blackEvaluator = nullptr);
     void run();
 
     void setAuthHandler(AuthHandler handler) { authHandler = std::move(handler); }
     void setLogoutHandler(std::function<void()> handler) { logoutHandler = std::move(handler); }
+    void setMatchRecorder(MatchRecorder recorder) { matchRecorder = std::move(recorder); }
     void setMatchHistory(std::vector<MatchSummary> matches) {
         matchSummaries = std::move(matches);
         matchHistoryMessage.clear();
@@ -57,6 +64,9 @@ public:
 
 private:
     Board game;
+    Engine whiteEngine;
+    Engine blackEngine;
+    int engineSide = 0;
     sf::RenderWindow window;
 
     enum class Screen {
@@ -97,6 +107,7 @@ private:
     int animatedToRow = -1;
     int animatedToCol = -1;
     int animatedPiece = 0;
+    Move animatedMove{};
     bool slidePieces = true;
     bool fullscreen = false;
     const float engineMoveDelaySeconds = 0.5f;
@@ -144,6 +155,11 @@ private:
     std::vector<MatchSummary> matchSummaries;
     std::string matchHistoryMessage;
     MatchHistoryProvider matchHistoryProvider;
+    MatchRecorder matchRecorder;
+    std::string gameAccountName;
+    int gamePlayerSide = -1;
+    bool gameRecorded = false;
+    std::string matchSaveMessage;
     float matchHistoryScroll = 0.f;
     sf::View logicalView;
 
@@ -205,6 +221,8 @@ private:
     void handleEvents();
     void updateEngine();
     bool applyMove(int fromRow, int fromCol, int toRow, int toCol, int promotionPiece = 0);
+    bool applyMove(const Move& move);
+    bool engineTurn() const;
     void updateResponsiveView(unsigned int width, unsigned int height);
     void toggleFullscreen();
     void drawLastMoveHighlights();
@@ -213,6 +231,8 @@ private:
     void drawProfilePicturePicker();
     void drawMatchHistoryScreen();
     void submitAccountForm();
+    void openMatchHistory();
+    void recordCompletedMatch();
     void loadProfilePictureOptions();
     void draw();
     void drawPieces();
