@@ -6,17 +6,26 @@
       "type": "process",
       "command": "C:\\msys64\\ucrt64\\bin\\g++.exe",
       "args": [
+        "-DCHESS_DATA_DIRECTORY=\"data\"",
         "-std=c++17",
         "-g",
+        "-I${workspaceFolder}",
         "${workspaceFolder}/main.cpp",
         "${workspaceFolder}/board.cpp",
+        "${workspaceFolder}/evaluator.cpp",
+        "${workspaceFolder}/engine.cpp",
+        "${workspaceFolder}/Engines/NewEvaluator.cpp",
+        "${workspaceFolder}/Engines/SecondEvaluator.cpp",
+        "${workspaceFolder}/storage/local_store.cpp",
         "${workspaceFolder}/UI files/ui.cpp",
         "-o",
         "${workspaceFolder}/chess.exe",
         "-lsfml-graphics",
         "-lsfml-window",
         "-lsfml-audio",
-        "-lsfml-system"
+        "-lsfml-system",
+        "-lsqlite3",
+        "-lbcrypt"
       ],
       "options": {
         "cwd": "${workspaceFolder}"
