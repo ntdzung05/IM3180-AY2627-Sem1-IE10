@@ -9,6 +9,7 @@
 #include <string>
 #include <optional>
 #include <functional>
+#include <future>
 
 struct MoveHistoryEntry {
     int piece;
@@ -66,6 +67,13 @@ private:
     Board game;
     Engine whiteEngine;
     Engine blackEngine;
+    struct SearchResult {
+        bool found;
+        Move move;
+    };
+    // Closing the window does not cancel search; this future joins before the Engines die.
+    std::future<SearchResult> searchFuture;
+    bool searchInvalidated = false;
     int engineSide = 0;
     sf::RenderWindow window;
 
@@ -189,6 +197,7 @@ private:
     int draggedCol = -1;
     int engineSearchDepth;
     bool engineStalled = false;
+    bool engineSearchFailed = false;
     Board startingBoard;
     int currentHistoryIndex = -1;
 

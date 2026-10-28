@@ -1,5 +1,6 @@
 #include "ui.hpp"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <ctime>
 #include <filesystem>
@@ -202,8 +203,7 @@ bool ChessUI::engineTurn() const {
     if (game.has_game_ended()) return false;
     if (gameMode == GameMode::EngineVsEngine) return true;
     if (gameMode == GameMode::PlayerVsPlayer) return false;
-    if (engineSide == 0) return whiteEngine.is_turn(game);
-    return blackEngine.is_turn(game);
+    return game.get_current_turn() == engineSide;
 }
 
 void ChessUI::updateEngine() {
@@ -224,6 +224,15 @@ void ChessUI::updateEngine() {
         if (!applyMove(animatedMove))
             engineStalled = true;
         return;
+    }
+
+    if (searchFuture.valid()) {
+        if (searchFuture.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+            return;
+        if (searchInvalidated) {
+            searchFuture = {};
+            return;
+        }
     }
 
     if (game.has_game_ended() || engineStalled || historyPaused ||
@@ -249,13 +258,32 @@ void ChessUI::updateEngine() {
         return;
     }
 
-    Engine& engine = (game.get_current_turn() == 0) ? whiteEngine : blackEngine;
-    if (!engine.find_best_move(game, engineSearchDepth)) {
+    SearchResult result{};
+    try {
+        if (!searchFuture.valid()) {
+            searchInvalidated = false;
+            engineSearchFailed = false;
+            Engine& engine = (game.get_current_turn() == 0) ? whiteEngine : blackEngine;
+            searchFuture = std::async(std::launch::async,
+                [snapshot = game, &engine, depth = engineSearchDepth] {
+                    const bool found = engine.find_best_move(snapshot, depth);
+                    return SearchResult{found, found ? engine.get_best_move() : Move{}};
+                });
+            return;
+        }
+        result = searchFuture.get();
+    } catch (...) {
+        engineStalled = true;
+        engineSearchFailed = true;
+        return;
+    }
+
+    if (!result.found) {
         engineStalled = true;
         return;
     }
 
-    animatedMove = engine.get_best_move();
+    animatedMove = result.move;
     const int fromRow = animatedMove.old_x;
     const int fromCol = animatedMove.old_y;
     const int toRow = animatedMove.new_x;
@@ -908,6 +936,7 @@ void ChessUI::handleEvents() {
                     {
                         playSound(uiClickSoundBuffer);
                         currentHistoryNode = i;
+                        searchInvalidated = true;
                         game = historyTree[i].move.boardAfterMove;
                         rebuildLinearHistoryFromNode(currentHistoryNode);
 
@@ -1923,7 +1952,7 @@ void ChessUI::drawText() {
     std::string turnText = game.get_current_turn() == 0 ? "White" : "Black";
     std::string status = game.has_game_ended() ? "Game ended" :
         turnText + " to move (" + std::to_string(game.get_moves_left()) + " actions left)";
-    if (engineStalled) status = "Engine has no legal move";
+    if (engineStalled) status = engineSearchFailed ? "Engine search failed" : "Engine has no legal move";
     sf::Text turnLabel(font, mode + " | " + status, 20);
     turnLabel.setPosition({static_cast<float>(boardX), 35.f});
     window.draw(turnLabel);
@@ -2994,6 +3023,7 @@ void ChessUI::clearSelection() {
 }
 
 void ChessUI::startGame(int engineSide, GameMode mode) {
+    searchInvalidated = true;
     game = Board();
     startingBoard = game;
 
