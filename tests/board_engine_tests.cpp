@@ -5,6 +5,7 @@
 
 #include <iostream>
 #include <algorithm>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -99,6 +100,11 @@ struct EngineTestAccess {
         return engine.negamax_search(board, 0, target, alpha, beta, root_move);
     }
 
+    static int search_score_from_depth(Engine& engine, Board& board, int depth, int target,
+                                       int alpha, int beta) {
+        return engine.negamax_search(board, depth, target, alpha, beta, nullptr);
+    }
+
     static int search_score_at_ply(Engine& engine, Board& board, int target,
                                    int alpha, int beta, std::size_t action_ply) {
         return engine.negamax_search(board, 0, target, alpha, beta, nullptr, action_ply);
@@ -116,6 +122,31 @@ struct EngineTestAccess {
                              const Move& second = Move{}) {
         engine.killer_moves.resize(std::max(engine.killer_moves.size(), ply + 1));
         engine.killer_moves[ply] = {Engine::encode_move(first), Engine::encode_move(second)};
+    }
+
+    static std::uint32_t history_score(const Engine& engine, int side, const Move& move) {
+        const int from = move.old_x * 8 + move.old_y;
+        const int to = move.new_x * 8 + move.new_y;
+        return engine.history_scores[side][from][to];
+    }
+
+    static void seed_history(Engine& engine, int side, const Move& move,
+                             std::uint32_t score) {
+        const int from = move.old_x * 8 + move.old_y;
+        const int to = move.new_x * 8 + move.new_y;
+        engine.history_scores[side][from][to] = score;
+    }
+
+    static void clear_history(Engine& engine) {
+        engine.history_scores = {};
+    }
+
+    static bool history_empty(const Engine& engine) {
+        for (const auto& side : engine.history_scores)
+            for (const auto& from : side)
+                for (std::uint32_t score : from)
+                    if (score != 0) return false;
+        return true;
     }
 
     static std::uint32_t packed(const Move& move) { return Engine::encode_move(move); }
@@ -183,6 +214,17 @@ struct EngineTestAccess {
         entry.depth = 2;
         entry.bound = static_cast<std::uint8_t>(Engine::BoundType::Lower);
         entry.best_move = Engine::encode_move(witness);
+    }
+
+    static void seed_bound(Engine& engine, const Board& board, const Move& move,
+                           int score, int depth, bool lower) {
+        auto& entry = engine.transposition[board.get_hash() & Engine::kTTMask];
+        entry.key = board.get_hash();
+        entry.score = score;
+        entry.depth = static_cast<std::uint8_t>(depth);
+        entry.bound = static_cast<std::uint8_t>(lower ? Engine::BoundType::Lower
+                                                       : Engine::BoundType::Upper);
+        entry.best_move = Engine::encode_move(move);
     }
 
     static void weaken_root_to_lower_bound(Engine& engine, const Board& board) {
@@ -739,6 +781,7 @@ void test_killer_recency_duplicate_slots_and_ply_isolation() {
     require(EngineTestAccess::killers(engine)[0] == std::array<std::uint32_t, 2>{
                 EngineTestAccess::packed(c), EngineTestAccess::packed(a)},
             "killers must move to front and evict the least recent distinct move");
+    EngineTestAccess::clear_history(engine);
     std::vector<Move> expected{c, a};
     for (const Move& move : legal) if (move != c && move != a) expected.push_back(move);
     require(EngineTestAccess::ordered(engine, board) == expected,
@@ -750,6 +793,7 @@ void test_killer_recency_duplicate_slots_and_ply_isolation() {
                 EngineTestAccess::killers(engine) == before,
             "unallocated killer reads must be safe and must not grow storage");
     cutoff(b, 4096);
+    EngineTestAccess::clear_history(engine);
     require(EngineTestAccess::killers(engine).size() == 4097 &&
                 EngineTestAccess::ordered(engine, board, 4096).front() == b &&
                 EngineTestAccess::ordered(engine, board) == expected,
@@ -837,7 +881,57 @@ void test_iterative_deepening_retains_killers_between_iterations() {
             "first depth-three leaf must still see killers recorded by shallower iterations");
 }
 
-void test_killer_recording_excludes_captures_and_promotions() {
+void test_public_root_clears_history_before_ordering() {
+    Board board;
+    BoardTestAccess::empty(board, 0, 1, 0);
+    BoardTestAccess::set_piece(board, 3, 3, 2);
+    BoardTestAccess::set_piece(board, 6, 7, -1);
+    const auto legal = board.legal_moves();
+    std::vector<Move> searched;
+    Engine engine(0, 1, std::make_unique<RootMoveRecordingEvaluator>(searched));
+    EngineTestAccess::seed_history(engine, 0, legal.back(), 100);
+    require(engine.find_best_move(board, 1), "history root-reset fixture found no move");
+    require(!searched.empty() && searched.front() == legal.front() &&
+                EngineTestAccess::history_empty(engine),
+            "public root must discard prior history before ordering, not after search");
+
+    EngineTestAccess::seed_history(engine, 0, legal.back(), 100);
+    Board wrong_turn;
+    BoardTestAccess::empty(wrong_turn, 1, 2, 0);
+    require(!engine.find_best_move(wrong_turn) && EngineTestAccess::history_empty(engine),
+            "wrong-turn public root must also clear prior history scores");
+}
+
+void test_iterative_deepening_retains_history_between_iterations() {
+    class RetentionEvaluator final : public Evaluator {
+        Engine*& engine;
+        bool& observed;
+        bool& retained;
+    public:
+        RetentionEvaluator(Engine*& engine, bool& observed, bool& retained)
+            : engine(engine), observed(observed), retained(retained) {}
+        int evaluate(const Board& board) const override {
+            if (!observed && BoardTestAccess::searched_turns(board, 0) == 3) {
+                observed = true;
+                retained = !EngineTestAccess::history_empty(*engine);
+            }
+            return 0;
+        }
+    };
+    Board board;
+    BoardTestAccess::empty(board, 0, 1, 0);
+    BoardTestAccess::set_piece(board, 3, 3, 2);
+    BoardTestAccess::set_piece(board, 6, 7, -1);
+    Engine* pointer = nullptr;
+    bool observed = false, retained = false;
+    Engine engine(0, 3, std::make_unique<RetentionEvaluator>(pointer, observed, retained));
+    pointer = &engine;
+    require(engine.find_best_move(board, 3), "history iterative-retention fixture found no move");
+    require(observed && retained,
+            "first depth-three leaf must see history learned by shallower iterations");
+}
+
+void test_cutoff_heuristics_exclude_captures_and_promotions() {
     for (int side : {0, 1}) {
         const int sign = side == 0 ? 1 : -1;
         for (const auto promotion : {SpecialMove::PromoteQueen, SpecialMove::PromoteRook,
@@ -853,12 +947,14 @@ void test_killer_recording_excludes_captures_and_promotions() {
                 EngineTestAccess::seed_ordering_hint(engine, board, cutoff);
                 require(EngineTestAccess::search_score(engine, board, 1, -1, 0) == 0,
                         "promotion cutoff fixture has the wrong score");
-                require(EngineTestAccess::killers(engine).empty(),
-                        "quiet or capture promotion was recorded as a killer");
+                require(EngineTestAccess::killers(engine).empty() &&
+                            EngineTestAccess::history_empty(engine),
+                        "quiet or capture promotion was recorded as a killer or history move");
                 const auto normal = EngineTestAccess::ordered(engine, board);
                 EngineTestAccess::seed_killers(engine, 0, cutoff);
+                EngineTestAccess::seed_history(engine, side, cutoff, 100);
                 require(EngineTestAccess::ordered(engine, board) == normal,
-                        "a stale promotion hint was promoted by killer ordering");
+                        "a stale promotion hint was promoted by killer or history ordering");
             }
         }
         Board board;
@@ -871,12 +967,13 @@ void test_killer_recording_excludes_captures_and_promotions() {
         const auto before = EngineTestAccess::killers(engine);
         EngineTestAccess::seed_ordering_hint(engine, board, capture);
         require(EngineTestAccess::search_score(engine, board, 1, -1, 0) == 0 &&
-                    EngineTestAccess::killers(engine) == before,
-                "ordinary capture cutoff changed the killer slots");
+                    EngineTestAccess::killers(engine) == before &&
+                    EngineTestAccess::history_empty(engine),
+                "ordinary capture cutoff changed killer slots or history scores");
     }
 }
 
-void test_quiet_castling_can_be_a_killer() {
+void test_quiet_castling_can_receive_cutoff_ordering_credit() {
     Board board;
     BoardTestAccess::empty(board, 0, 1);
     BoardTestAccess::set_piece(board, 0, 3, 6);
@@ -886,8 +983,9 @@ void test_quiet_castling_can_be_a_killer() {
     EngineTestAccess::seed_ordering_hint(engine, board, castle);
     EngineTestAccess::search_score(engine, board, 1, -1, 0);
     require(EngineTestAccess::killers(engine).size() == 1 &&
-                EngineTestAccess::ordered(engine, board).front() == castle,
-            "quiet castling cutoff must be eligible for killer ordering");
+                EngineTestAccess::ordered(engine, board).front() == castle &&
+                EngineTestAccess::history_score(engine, 0, castle) == 1,
+            "quiet castling cutoff must be eligible for killer and history ordering");
 }
 
 void test_stale_killer_hints_do_not_promote_illegal_or_capturing_moves() {
@@ -953,6 +1051,210 @@ void test_tt_capture_killer_precedence_and_stability() {
     }
     require(EngineTestAccess::ordered(engine, board, 0, Move{2, 2, 7, 7}) == expected,
             "illegal TT hint changed ordered legal moves");
+}
+
+void test_history_orders_only_remaining_quiet_moves() {
+    Board board;
+    BoardTestAccess::empty(board, 0, 2, 0);
+    BoardTestAccess::set_piece(board, 3, 3, 6);
+    BoardTestAccess::set_piece(board, 2, 2, 2);
+    BoardTestAccess::set_piece(board, 4, 3, -4);
+    BoardTestAccess::set_piece(board, 4, 1, -4);
+    const auto legal = board.legal_moves();
+    std::vector<Move> captures, quiet;
+    for (const Move& move : legal)
+        (board.get_piece(move.new_x, move.new_y) ? captures : quiet).push_back(move);
+    constexpr int values[] = {0, 1, 3, 3, 5, 9, 99999};
+    auto mvv = [&](const Move& move) {
+        return values[std::abs(board.get_piece(move.new_x, move.new_y))] * 8 -
+            values[std::abs(board.get_piece(move.old_x, move.old_y))];
+    };
+    std::stable_sort(captures.begin(), captures.end(), [&](const Move& a, const Move& b) {
+        return mvv(a) > mvv(b);
+    });
+    require(captures.size() >= 3 && quiet.size() >= 7,
+            "history ordering fixture lacks enough capture or quiet moves");
+
+    const Move first_killer = quiet.back();
+    const Move second_killer = quiet[quiet.size() - 2];
+    std::vector<Move> remaining;
+    for (const Move& move : quiet)
+        if (move != first_killer && move != second_killer) remaining.push_back(move);
+    const Move high = remaining.back();
+    const Move tie_a = remaining[1];
+    const Move tie_b = remaining[remaining.size() - 2];
+    require(high != tie_a && high != tie_b && tie_a != tie_b,
+            "history ordering fixture did not select distinct quiet moves");
+
+    Engine engine(0, 1, std::make_unique<FixedEvaluator>(0));
+    EngineTestAccess::seed_killers(engine, 0, first_killer, second_killer);
+    EngineTestAccess::seed_history(engine, 0, high, 9);
+    EngineTestAccess::seed_history(engine, 0, tie_a, 5);
+    EngineTestAccess::seed_history(engine, 0, tie_b, 5);
+    EngineTestAccess::seed_history(engine, 1, remaining.front(), 1000);
+
+    auto expected = captures;
+    expected.push_back(first_killer);
+    expected.push_back(second_killer);
+    expected.push_back(high);
+    for (const Move& move : remaining)
+        if (move == tie_a || move == tie_b) expected.push_back(move);
+    for (const Move& move : remaining)
+        if (move != high && move != tie_a && move != tie_b) expected.push_back(move);
+    require(EngineTestAccess::ordered(engine, board) == expected,
+            "history must rank only same-side non-killer quiet moves with stable ties");
+
+    const Move tt = tie_b;
+    auto with_tt = expected;
+    const auto place = std::find(with_tt.begin(), with_tt.end(), tt);
+    std::rotate(with_tt.begin(), place, place + 1);
+    require(EngineTestAccess::ordered(engine, board, 0, tt) == with_tt,
+            "TT move must lead without disturbing capture, killer, or history order");
+}
+
+void test_history_credits_only_the_current_searched_cutoff_move() {
+    for (int side : {0, 1}) {
+        Board board;
+        BoardTestAccess::empty(board, side, 1, 0);
+        BoardTestAccess::set_piece(board, 3, 3, side == 0 ? 2 : -2);
+        const Board before = board;
+        const auto legal = board.legal_moves();
+        require(legal.size() >= 3, "history cutoff fixture lacks quiet alternatives");
+        const Move cutoff = legal.back();
+
+        Engine engine(side, 3, std::make_unique<FixedEvaluator>(0));
+        EngineTestAccess::seed_ordering_hint(engine, board, cutoff);
+        require(EngineTestAccess::search_score(engine, board, 3, -1, 0) == 0,
+                "history cutoff fixture did not close its search window");
+        require(EngineTestAccess::history_score(engine, side, cutoff) == 9,
+                "current quiet cutoff move did not receive remaining-depth-squared credit");
+        require(EngineTestAccess::history_score(engine, 1 - side, cutoff) == 0,
+                "history cutoff credit was stored under the wrong moving side");
+        for (const Move& move : legal)
+            if (move != cutoff)
+                require(EngineTestAccess::history_score(engine, side, move) == 0,
+                        "a searched or unsearched non-cutoff sibling received history credit");
+
+        require(EngineTestAccess::search_score(engine, board, 3, -1, 0) == 0 &&
+                    EngineTestAccess::history_score(engine, side, cutoff) == 18,
+                "a qualifying TT cutoff must reward its quiet move with the same depth-squared credit");
+        require(same_board(board, before) && BoardTestAccess::undo_size(board) == 0,
+                "history cutoff learning changed its input position");
+
+        Engine no_cutoff(side, 1, std::make_unique<FixedEvaluator>(0));
+        require(EngineTestAccess::search_score(no_cutoff, board, 1, NEGINF, INF) == 0,
+                "full-window history fixture returned an unexpected score");
+        for (const Move& move : legal)
+            require(EngineTestAccess::history_score(no_cutoff, side, move) == 0,
+                    "an alpha improvement without a beta cutoff received history credit");
+    }
+}
+
+void test_cached_history_uses_requested_depth_and_requires_lower_witness() {
+    for (int side : {0, 1}) {
+        Board board;
+        BoardTestAccess::empty(board, side, 1, 0);
+        BoardTestAccess::set_piece(board, 3, 3, side == 0 ? 2 : -2);
+        const auto legal = board.legal_moves();
+        const Move move = legal.back();
+        const Board before = board;
+        Engine engine(side, 3, std::make_unique<FixedEvaluator>(0));
+        EngineTestAccess::seed_bound(engine, board, move, 0, 5, true);
+        require(EngineTestAccess::search_score_from_depth(engine, board, 1, 3, -1, 0) == 0 &&
+                    EngineTestAccess::history_score(engine, side, move) == 4,
+                "cached cutoff bonus must use current remaining depth, not stored depth");
+        require(same_board(board, before), "TT history reward changed the board");
+
+        Engine upper(side, 1, std::make_unique<FixedEvaluator>(0));
+        EngineTestAccess::seed_bound(upper, board, move, -1, 5, false);
+        require(EngineTestAccess::search_score(upper, board, 1, -1, 0) == -1 &&
+                    EngineTestAccess::history_empty(upper),
+                "upper-bound TT cutoff must not reward its stored move");
+        Move upper_root_move;
+        EngineTestAccess::search_score(upper, board, 1, -1, 0, &upper_root_move);
+        require(EngineTestAccess::history_empty(upper),
+                "a root with an already-closed upper-bound window must not reward a searched move");
+
+        Engine illegal(side, 1, std::make_unique<FixedEvaluator>(0));
+        EngineTestAccess::seed_bound(illegal, board, Move{0, 0, 7, 7}, 0, 5, true);
+        require(EngineTestAccess::search_score(illegal, board, 1, -1, 0) == 0 &&
+                    EngineTestAccess::history_empty(illegal),
+                "illegal cached move must not receive history credit");
+
+        Engine root(side, 1, std::make_unique<FixedEvaluator>(0));
+        EngineTestAccess::seed_bound(root, board, move, 0, 5, true);
+        Move root_move;
+        EngineTestAccess::search_score(root, board, 1, -1, 0, &root_move);
+        require(EngineTestAccess::history_score(root, side, move) == 1,
+                "closed-window root must not award a second searched-move bonus");
+
+        Engine saturated(side, 1, std::make_unique<FixedEvaluator>(0));
+        EngineTestAccess::seed_bound(saturated, board, move, 0, 5, true);
+        constexpr auto limit = std::numeric_limits<std::uint32_t>::max();
+        EngineTestAccess::seed_history(saturated, side, move, limit);
+        EngineTestAccess::search_score(saturated, board, 1, -1, 0);
+        require(EngineTestAccess::history_score(saturated, side, move) == limit,
+                "cached history reward must saturate without wrapping");
+    }
+}
+
+void test_history_score_saturates_without_overflow() {
+    Board board;
+    BoardTestAccess::empty(board, 0, 1, 0);
+    BoardTestAccess::set_piece(board, 3, 3, 2);
+    const Move cutoff = board.legal_moves().back();
+    constexpr auto limit = std::numeric_limits<std::uint32_t>::max();
+
+    Engine near_limit(0, 3, std::make_unique<FixedEvaluator>(0));
+    EngineTestAccess::seed_ordering_hint(near_limit, board, cutoff);
+    EngineTestAccess::seed_history(near_limit, 0, cutoff, limit - 1);
+    require(EngineTestAccess::search_score(near_limit, board, 3, -1, 0) == 0 &&
+                EngineTestAccess::history_score(near_limit, 0, cutoff) == limit,
+            "history accumulation must saturate instead of wrapping near its limit");
+
+    Engine wide_bonus(0, 1, std::make_unique<FixedEvaluator>(0));
+    EngineTestAccess::seed_ordering_hint(wide_bonus, board, cutoff);
+    require(EngineTestAccess::search_score(wide_bonus, board, 70000, -1, 0) == 0 &&
+                EngineTestAccess::history_score(wide_bonus, 0, cutoff) == limit,
+            "history depth square must widen and clamp before multiplication overflows");
+}
+
+void test_history_uses_completed_turn_depth_for_same_turn_actions() {
+    for (int side : {0, 1}) {
+        Board board;
+        BoardTestAccess::empty(board, side, 2, 0);
+        BoardTestAccess::set_piece(board, 3, 3, side == 0 ? 2 : -2);
+        const Board before = board;
+        const Move first = board.legal_moves().back();
+        Board child = board;
+        require(child.make_move(first) && child.get_current_turn() == side,
+                "same-turn history fixture did not preserve the moving side");
+        const Move second = child.legal_moves().front();
+
+        Engine engine(side, 2, std::make_unique<FixedEvaluator>(0));
+        EngineTestAccess::seed_ordering_hint(engine, board, first);
+        require(EngineTestAccess::search_score(engine, board, 2, -1, 0) == 0,
+                "same-turn history fixture did not close its search window");
+        require(EngineTestAccess::history_score(engine, side, first) == 4 &&
+                    EngineTestAccess::history_score(engine, side, second) == 4,
+                "both same-turn cutoff actions must use the current completed-turn depth");
+        require(EngineTestAccess::history_score(engine, 1 - side, first) == 0 &&
+                    EngineTestAccess::history_score(engine, 1 - side, second) == 0,
+                "same-turn history credit used the post-move or engine side incorrectly");
+        require(same_board(board, before) && BoardTestAccess::undo_size(board) == 0,
+                "same-turn history learning changed its input position");
+
+        Board horizon;
+        BoardTestAccess::empty(horizon, side, 1, 0);
+        BoardTestAccess::set_piece(horizon, 3, 3, side == 0 ? 2 : -2);
+        const Move horizon_cutoff = horizon.legal_moves().front();
+        Engine horizon_engine(side, 1, std::make_unique<FixedEvaluator>(0));
+        require(EngineTestAccess::search_score_from_depth(
+                    horizon_engine, horizon, 1, 1, -1, 0) == 0 &&
+                    EngineTestAccess::history_score(
+                        horizon_engine, side, horizon_cutoff) == 1,
+                "a final action at the completed-turn horizon must receive nonzero credit");
+    }
 }
 
 class MaterialOnlyEvaluator final : public Evaluator {
@@ -1783,7 +2085,51 @@ void test_killer_ordered_search_matches_independent_minimax() {
     }
 }
 
-void test_quiescence_does_not_consume_or_change_killer_hints() {
+void test_history_ordered_search_matches_independent_minimax() {
+    for (int side : {0, 1}) {
+        for (int actions : {1, 2}) {
+            Board board;
+            BoardTestAccess::empty(board, side, actions, 0);
+            BoardTestAccess::set_piece(board, 1, 0, 6);
+            BoardTestAccess::set_piece(board, 6, 7, -6);
+            BoardTestAccess::set_piece(board, 3, 3, 1);
+            BoardTestAccess::set_piece(board, 4, 4, -1);
+            const std::string context = "history SecondEvaluator side " + std::to_string(side)
+                + ", actions " + std::to_string(actions);
+            const SecondEvaluator evaluator;
+            Board oracle = board;
+            const int exact = exhaustive_score(oracle, evaluator, 0, 2);
+            Engine engine(side, 2, std::make_unique<SecondEvaluator>());
+            std::vector<Move> quiet;
+            for (const Move& move : board.legal_moves())
+                if (board.get_piece(move.new_x, move.new_y) == 0 &&
+                    move.special_move < SpecialMove::PromoteQueen) quiet.push_back(move);
+            require(quiet.size() >= 2, context + ": not enough quiet candidates");
+            const auto normal_order = EngineTestAccess::ordered(engine, board);
+            EngineTestAccess::seed_history(engine, side, quiet.back(), 100);
+            require(EngineTestAccess::ordered(engine, board) != normal_order,
+                    context + ": seeded history did not alter traversal");
+            Engine independent(side, 2, std::make_unique<SecondEvaluator>());
+            require(EngineTestAccess::ordered(independent, board) == normal_order &&
+                        EngineTestAccess::history_empty(independent),
+                    context + ": history leaked into another Engine instance");
+
+            const Board before = board;
+            Move selected{};
+            require(EngineTestAccess::search_score(engine, board, 2, NEGINF, INF, &selected) == exact,
+                    context + ": history-ordered score differs from independent minimax");
+            Board child = board;
+            require(child.make_move(selected), context + ": selected move is illegal");
+            const bool changed = child.get_current_turn() != side;
+            const int score = exhaustive_score(child, evaluator, changed ? 1 : 0, 2);
+            require((changed ? -score : score) == exact && same_board(board, before) &&
+                        BoardTestAccess::undo_size(board) == 0,
+                    context + ": nonoptimal move or mutated root");
+        }
+    }
+}
+
+void test_quiescence_does_not_consume_or_change_move_ordering_hints() {
     Board board;
     BoardTestAccess::empty(board, 0, 2, 0);
     BoardTestAccess::set_piece(board, 0, 0, 6);
@@ -1798,14 +2144,18 @@ void test_quiescence_does_not_consume_or_change_killer_hints() {
     Engine engine(0, 1, std::make_unique<CaptureOnlyRecordingEvaluator>(with_killers));
     EngineTestAccess::seed_killers(engine, 0, Move{3, 0, 3, 4}, Move{3, 0, 2, 0});
     EngineTestAccess::seed_killers(engine, 1, Move{4, 5, 3, 4});
+    const Move history_hint{3, 0, 2, 0};
+    EngineTestAccess::seed_history(engine, 0, history_hint, 123);
     const auto killers = EngineTestAccess::killers(engine);
     for (const auto window : {std::pair<int, int>{NEGINF, INF}, {-1000, 0}, {0, 1}}) {
         with_killers.clear();
         const int actual = EngineTestAccess::quiescence_score(
             engine, board, window.first, window.second);
-        require(EngineTestAccess::killers(engine) == killers && same_board(board, before) &&
-                    BoardTestAccess::undo_size(board) == 0 && EngineTestAccess::tt_is_empty(engine),
-                "capture-only quiescence changed killer hints, TT, or root state");
+        require(EngineTestAccess::killers(engine) == killers &&
+                    EngineTestAccess::history_score(engine, 0, history_hint) == 123 &&
+                    same_board(board, before) && BoardTestAccess::undo_size(board) == 0 &&
+                    EngineTestAccess::tt_is_empty(engine),
+                "capture-only quiescence changed killer/history hints, TT, or root state");
         if (window.first == NEGINF)
             require(actual == expected && with_killers == normal,
                     "quiescence score or capture visitation changed with populated killer hints");
@@ -2233,12 +2583,20 @@ int main() {
         test_recursive_killers_use_true_action_ply();
         test_public_root_clears_killers_before_ordering();
         test_iterative_deepening_retains_killers_between_iterations();
-        test_killer_recording_excludes_captures_and_promotions();
-        test_quiet_castling_can_be_a_killer();
+        test_public_root_clears_history_before_ordering();
+        test_iterative_deepening_retains_history_between_iterations();
+        test_cutoff_heuristics_exclude_captures_and_promotions();
+        test_quiet_castling_can_receive_cutoff_ordering_credit();
         test_stale_killer_hints_do_not_promote_illegal_or_capturing_moves();
         test_tt_capture_killer_precedence_and_stability();
+        test_history_orders_only_remaining_quiet_moves();
+        test_history_credits_only_the_current_searched_cutoff_move();
+        test_cached_history_uses_requested_depth_and_requires_lower_witness();
+        test_history_score_saturates_without_overflow();
+        test_history_uses_completed_turn_depth_for_same_turn_actions();
         test_killer_ordered_search_matches_independent_minimax();
-        test_quiescence_does_not_consume_or_change_killer_hints();
+        test_history_ordered_search_matches_independent_minimax();
+        test_quiescence_does_not_consume_or_change_move_ordering_hints();
         test_board_owns_rules_only();
         test_engines_take_turns_on_one_board();
         test_engine_configuration_is_independent();

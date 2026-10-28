@@ -1,6 +1,7 @@
 #include "engine.hpp"
 
 #include <algorithm>
+#include <limits>
 #include <stdexcept>
 
 Engine::Engine(int engine_side, int search_depth,
@@ -86,8 +87,9 @@ std::vector<Move> Engine::order_moves(Board& board,
     // config, so a king capture sorts to the very top).
     constexpr int piece_value[7] = {0, 1, 3, 3, 5, 9, 99999};
 
-    // Within-category priority: MVV-LVA for captures, recency for killers.
-    std::vector<int> scores(n, 0);
+    // Within-category priority: MVV-LVA for captures, recency for killers,
+    // accumulated cutoff credit for the remaining quiet moves.
+    std::vector<std::int64_t> scores(n, 0);
     std::vector<int> categories(n, 0);
     for (std::size_t i = 0; i < n; ++i) {
         const Move& move = legal[i];
@@ -102,6 +104,11 @@ std::vector<Move> Engine::order_moves(Board& board,
                         break;
                     }
                 }
+            }
+            if (categories[i] == 0 && move.special_move < SpecialMove::PromoteQueen) {
+                const int from = move.old_x * 8 + move.old_y;
+                const int to = move.new_x * 8 + move.new_y;
+                scores[i] = history_scores[board.get_current_turn()][from][to];
             }
             continue;
         }
@@ -184,6 +191,17 @@ int Engine::negamax_search(Board& board, int depth, int max_depth,
     const Hash key = board.get_hash();
     const int original_alpha = alpha;
     const int original_beta = beta;
+    const auto reward_history = [&](const Move& move) {
+        const int from = move.old_x * 8 + move.old_y;
+        const int to = move.new_x * 8 + move.new_y;
+        const auto remaining_depth = static_cast<std::uint64_t>(
+            std::max(1, max_depth - depth));
+        const std::uint64_t bonus = remaining_depth * remaining_depth;
+        auto& history = history_scores[board.get_current_turn()][from][to];
+        history = static_cast<std::uint32_t>(std::min<std::uint64_t>(
+            static_cast<std::uint64_t>(history) + bonus,
+            std::numeric_limits<std::uint32_t>::max()));
+    };
     TranspositionEntry& entry = transposition[key & kTTMask];
     const std::uint32_t tt_best = entry.key == key ? entry.best_move : 0;
     if (entry.key == key && entry.depth >= max_depth - depth) {
@@ -193,6 +211,14 @@ int Engine::negamax_search(Board& board, int depth, int max_depth,
         } else if (entry.bound == static_cast<std::uint8_t>(BoundType::Lower)) {
             alpha = std::max(alpha, entry.score);
             if (alpha >= beta) {
+                if (original_alpha < original_beta && entry.best_move != 0) {
+                    const Move cached_move = decode_move(entry.best_move);
+                    const auto legal = board.legal_moves();
+                    if (std::find(legal.begin(), legal.end(), cached_move) != legal.end() &&
+                        board.get_piece(cached_move.new_x, cached_move.new_y) == 0 &&
+                        cached_move.special_move < SpecialMove::PromoteQueen)
+                        reward_history(cached_move);
+                }
                 if (root_move == nullptr) return entry.score;
                 if (entry.best_move != 0) *root_move = decode_move(entry.best_move);
             }
@@ -214,6 +240,7 @@ int Engine::negamax_search(Board& board, int depth, int max_depth,
         action_ply < killer_moves.size() ? &killer_moves[action_ply] : nullptr);
 
     for (const Move& move : moves) {
+        const bool window_was_open = alpha < beta;
         if (!board.make_move(move)) continue;
 
         bool turn_changed = board.get_current_turn() != turn_before;
@@ -261,6 +288,7 @@ int Engine::negamax_search(Board& board, int depth, int max_depth,
                     killers[1] = killers[0];
                     killers[0] = packed;
                 }
+                if (window_was_open && child_score >= beta) reward_history(move);
             }
             break;
         }
@@ -289,6 +317,7 @@ bool Engine::find_best_move(const Board& position, int requested_depth) {
     search_nodes = 0;
     closed_window_nodes = 0;
     killer_moves.clear();
+    history_scores = {};
 
     if (!is_turn(position)) return false;
 

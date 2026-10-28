@@ -42,6 +42,7 @@ class Engine {
     std::size_t closed_window_nodes = 0;
     std::unique_ptr<TranspositionEntry[]> transposition;
     std::vector<std::array<std::uint32_t, 2>> killer_moves;
+    std::array<std::array<std::array<std::uint32_t, 64>, 64>, 2> history_scores{};
 
     static constexpr int kMaxQuiescencePly = 8;
     int quiescence_search(Board& board, int alpha, int beta, int capture_ply);
