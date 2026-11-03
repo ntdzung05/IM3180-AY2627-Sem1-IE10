@@ -1,6 +1,7 @@
 #pragma once
 #include "../board.hpp"
 #include "../engine.hpp"
+#include "../UI_Mirror/extras.hpp"
 #include <SFML/Graphics.hpp>
 #include <SFML/Audio.hpp>
 #include <map>
@@ -39,6 +40,7 @@ public:
         std::string black;
         std::string result;
         std::string date;
+        std::vector<Move> mainline;
     };
 
     using AuthHandler = std::function<bool(
@@ -127,6 +129,25 @@ private:
     const float engineMoveDelaySeconds = 0.5f;
     const float engineSlideSeconds = 0.3f;
 
+    const float matchSeconds = 120.f;
+    float moveTimeLeft = 120.f;
+    int clockKeyNode = -2;
+    int clockKeyTurn = -1;
+    int clockKeyMovesLeft = -1;
+    sf::Clock clockTimer;
+    bool timeExpired = false;
+    int timeoutLoser = -1;
+    void updateClocks();
+    void drawClocks();
+
+    bool historyPreviewHeld = false;
+    // True after clicking a history node to inspect a past/pre-move
+    // position. Suppresses engine auto-play so landing on a position where
+    // it happens to be the engine's turn doesn't instantly replay that
+    // move and jump the highlight back to (what looks like) the clicked
+    // node. Cleared once a move is actually played from the live board.
+    bool historyBrowsing = false;
+
     Move pendingPromotion{};
 
     bool showPossibleMoves = true;
@@ -136,6 +157,13 @@ private:
 
     std::vector<HistoryNode> historyTree;
     int currentHistoryNode = -1;
+    // The node whose box gets the gold outline in the history tree. Kept
+    // separate from currentHistoryNode: after a history click the board
+    // shows the position BEFORE the clicked move, so currentHistoryNode
+    // moves to that move's parent (to keep tree-attachment correct if play
+    // continues), but the gold highlight should still mark the move the
+    // player actually clicked on.
+    int viewingHistoryNode = -1;
     int hoveredHistoryNode = -1;
     float historyHorizontalScroll = 0.f;
     bool historyHorizontalScrollbarDragging = false;
@@ -167,6 +195,9 @@ private:
     std::string matchHistoryMessage;
     MatchHistoryProvider matchHistoryProvider;
     MatchRecorder matchRecorder;
+    MatchHistoryPage matchHistoryPage;
+    MatchReplayState matchReplayState;
+    EvaluationBarState evaluationBarState;
     std::string gameAccountName;
     int gamePlayerSide = -1;
     bool gameRecorded = false;
@@ -176,6 +207,7 @@ private:
 
     std::vector<std::string> pieceThemeFolders;
     std::vector<sf::Texture> pieceThemeKings;
+    std::vector<std::vector<sf::Texture>> themePreviewPieces;
 
     int boardTheme = 0;
     std::vector<std::string> boardThemeFolders;

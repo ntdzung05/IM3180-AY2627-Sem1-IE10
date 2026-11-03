@@ -18,6 +18,7 @@
         "${workspaceFolder}/Engines/SecondEvaluator.cpp",
         "${workspaceFolder}/storage/local_store.cpp",
         "${workspaceFolder}/UI files/ui.cpp",
+        "${workspaceFolder}/UI_Mirror/extras.cpp",
         "-o",
         "${workspaceFolder}/chess.exe",
         "-lsfml-graphics",
