@@ -40,6 +40,12 @@ struct ChessUITestAccess {
         ui.accountSignedIn = !username.empty();
     }
     static std::size_t tree_size(const ChessUI& ui) { return ui.historyTree.size(); }
+    static void run_out_clock(ChessUI& ui) {
+        ui.updateClocks();
+        ui.moveTimeLeft = 0.f;
+        ui.updateClocks();
+    }
+    static bool timed_out(const ChessUI& ui) { return ui.timeExpired; }
     static void open_history(ChessUI& ui) { ui.openMatchHistory(); }
     static const auto& summaries(const ChessUI& ui) { return ui.matchSummaries; }
     static const std::string& history_message(const ChessUI& ui) { return ui.matchHistoryMessage; }
@@ -222,6 +228,35 @@ void test_save_failure_retries_without_duplicate_game(ChessUI& ui, LocalStore& s
     ui.setMatchRecorder({});
 }
 
+void test_same_move_reuses_history_node(ChessUI& ui) {
+    ChessUITestAccess::start_pve(ui, 1);
+    const Move first = Board().legal_moves().front();
+    require(ChessUITestAccess::apply(ui, first), "first history move rejected");
+    ChessUITestAccess::return_to_root(ui);
+    require(ChessUITestAccess::apply(ui, first) && ChessUITestAccess::tree_size(ui) == 1,
+            "repeating the same move created a duplicate history branch");
+}
+
+void test_timeout_loss_is_recorded(ChessUI& ui) {
+    int recordings = 0;
+    std::string result;
+    std::size_t saved_moves = 0;
+    ui.setMatchRecorder([&](const std::string&, int, const ChessUI::MatchSummary& summary,
+                            const std::vector<Move>& moves) {
+        ++recordings;
+        result = summary.result;
+        saved_moves = moves.size();
+    });
+    ChessUITestAccess::start_pve(ui, 1);
+    require(ChessUITestAccess::apply(ui, Board().legal_moves().front()), "timeout fixture move rejected");
+    ChessUITestAccess::run_out_clock(ui);
+    require(ChessUITestAccess::timed_out(ui) && recordings == 1 && result == "1-0 (time)" && saved_moves == 1,
+            "timeout loss was not recorded in match history");
+    ChessUITestAccess::record(ui);
+    require(recordings == 1, "timeout match was saved twice");
+    ui.setMatchRecorder({});
+}
+
 #ifdef _WIN32
 void test_choose_side_profile_and_logout_clicks(ChessUI& ui) {
     ChessUITestAccess::choose_side(ui);
@@ -255,6 +290,8 @@ int main(int argc, char** argv) {
             test_history_provider_receives_current_account(ui, store);
             test_pve_records_only_signed_in_human_sides(ui);
             test_save_failure_retries_without_duplicate_game(ui, store);
+            test_same_move_reuses_history_node(ui);
+            test_timeout_loss_is_recorded(ui);
 #ifdef _WIN32
             test_choose_side_profile_and_logout_clicks(ui);
 #endif

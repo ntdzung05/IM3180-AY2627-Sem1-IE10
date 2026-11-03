@@ -132,7 +132,8 @@ struct ChessUITestAccess {
         playerMovement(ui, 0);
     }
     static bool engineTurn(const ChessUI& ui) { return ui.engineTurn(); }
-    static int historyParent(const ChessUI& ui) { return ui.historyTree.back().parent; }
+    static int historyParent(const ChessUI& ui) { return ui.historyTree.at(ui.currentHistoryNode).parent; }
+    static int currentNode(const ChessUI& ui) { return ui.currentHistoryNode; }
     static std::string historyPosition(const ChessUI& ui, int node) {
         return ui.historyTree.at(node).move.boardAfterMove.export_fen();
     }
@@ -158,11 +159,26 @@ struct ChessUITestAccess {
         SendMessageW(ui.window.getNativeHandle(), WM_LBUTTONUP, 0, MAKELPARAM(x, y));
         ui.handleEvents();
     }
+    static std::string beforePosition(const ChessUI& ui, int node) {
+        const int parent = ui.historyTree.at(node).parent;
+        return parent < 0 ? ui.startingBoard.export_fen() : historyPosition(ui, parent);
+    }
+    static bool browsing(const ChessUI& ui) { return ui.historyBrowsing; }
     static void navigate(ChessUI& ui, int node) {
-        const auto point = ui.getHistoryNodePositions().at(node);
-        click(ui, static_cast<int>(point.x + 20), static_cast<int>(point.y - ui.historyScroll + 20));
-        require(ui.currentHistoryNode == node && position(ui) == historyPosition(ui, node),
-                "history click did not restore the selected board");
+        const sf::Vector2f point = node == 0
+            ? sf::Vector2f{ui.sidePanelX + 25.f, ui.sidePanelY + 75.f}
+            : ui.getHistoryNodePositions().at(node) - sf::Vector2f{0.f, ui.historyScroll};
+        click(ui, static_cast<int>(point.x + 20), static_cast<int>(point.y + 20));
+        require(ui.historyBrowsing && ui.viewingHistoryNode == node &&
+                ui.currentHistoryNode == ui.historyTree.at(node).parent &&
+                position(ui) == beforePosition(ui, node),
+                "history click did not show the board before the selected move");
+    }
+    static void resume(ChessUI& ui) {
+        const int node = ui.viewingHistoryNode;
+        click(ui, ui.sidePanelX + ui.sidePanelWidth - 176, ui.sidePanelY + 64);
+        require(!ui.historyBrowsing && ui.currentHistoryNode == node && position(ui) == historyPosition(ui, node),
+                "RESUME did not return to the selected history node");
     }
     static void clickSquare(ChessUI& ui, int row, int col) {
         click(ui, ui.boardX + ui.displayCol(col) * ui.squareSize + ui.squareSize / 2,
@@ -186,13 +202,15 @@ void consumeResultAndSlide(ChessUI& ui) {
     waitForResult(ui);
     const auto before = ChessUITestAccess::position(ui);
     const auto movesBefore = ChessUITestAccess::moves(ui);
+    const int nodeBefore = ChessUITestAccess::currentNode(ui);
     ChessUITestAccess::update(ui);
     require(ChessUITestAccess::animating(ui) && !ChessUITestAccess::pending(ui) &&
             ChessUITestAccess::moves(ui) == movesBefore && ChessUITestAccess::position(ui) == before,
             "valid worker result did not start an unapplied slide");
     std::this_thread::sleep_for(350ms);
     ChessUITestAccess::update(ui);
-    require(!ChessUITestAccess::animating(ui) && ChessUITestAccess::moves(ui) == movesBefore + 1 &&
+    require(!ChessUITestAccess::animating(ui) && ChessUITestAccess::currentNode(ui) != nodeBefore &&
+            ChessUITestAccess::historyParent(ui) == nodeBefore && ChessUITestAccess::moves(ui) <= movesBefore + 1 &&
             ChessUITestAccess::position(ui) != before, "engine slide did not apply exactly one move");
 }
 
@@ -345,12 +363,8 @@ void test_history_navigation_discards_old_result() {
         std::this_thread::sleep_for(550ms);
         ChessUITestAccess::update(ui);
         require(gate->waitForEntry(), "navigation fixture search never started");
-        const auto searched = ChessUITestAccess::position(ui);
         ChessUITestAccess::navigate(ui, node);
-        const auto selected = ChessUITestAccess::position(ui);
-        require((selected == searched) == (node == 3), "history same/different-board fixture is invalid");
-        const bool engineTurn = ChessUITestAccess::engineTurn(ui);
-        require(engineTurn == (node != 1), "history fixture selected the wrong controller");
+        const auto browsed = ChessUITestAccess::position(ui);
         std::this_thread::sleep_for(550ms);
         ChessUITestAccess::update(ui);
         {
@@ -369,15 +383,25 @@ void test_history_navigation_discards_old_result() {
         ChessUITestAccess::update(ui);
         require(!ChessUITestAccess::stalled(ui) && !ChessUITestAccess::failed(ui),
                 "cancelled history search changed error flags");
-        require(ChessUITestAccess::moves(ui) == 4 && ChessUITestAccess::position(ui) == selected &&
+        require(ChessUITestAccess::moves(ui) == 4 && ChessUITestAccess::position(ui) == browsed &&
                 !ChessUITestAccess::animating(ui) && !ChessUITestAccess::pending(ui),
                 "history navigation consumed the invalidated search result");
+        std::this_thread::sleep_for(550ms);
+        for (int frame = 0; frame < 3; ++frame) ChessUITestAccess::update(ui);
+        require(!ChessUITestAccess::pending(ui) && ChessUITestAccess::position(ui) == browsed,
+                "engine searched while browsing history");
+        ChessUITestAccess::resume(ui);
+        const auto selected = ChessUITestAccess::position(ui);
+        const bool engineTurn = ChessUITestAccess::engineTurn(ui);
+        require(engineTurn == (node != 1), "history fixture selected the wrong controller");
+        ChessUITestAccess::update(ui);
+        std::this_thread::sleep_for(550ms);
         ChessUITestAccess::update(ui);
         require(ChessUITestAccess::pending(ui) == engineTurn,
-                "selected history position did not continue according to its PvE turn");
+                "resumed history position did not continue according to its PvE turn");
         if (engineTurn) {
             consumeResultAndSlide(ui);
-            require(ChessUITestAccess::moves(ui) == 5 && ChessUITestAccess::historyParent(ui) == node,
+            require(ChessUITestAccess::historyParent(ui) == node,
                     "history continuation did not branch from the selected node");
         } else {
             require(ChessUITestAccess::position(ui) == selected && ChessUITestAccess::moves(ui) == 4,
@@ -388,7 +412,7 @@ void test_history_navigation_discards_old_result() {
     }
 }
 
-void test_history_selection_resets_delay_without_play() {
+void test_history_browsing_pauses_until_resume() {
     for (int node : {3, 0, 1}) {
         auto gate = std::make_shared<SearchGate>();
         gate->release();
@@ -397,14 +421,21 @@ void test_history_selection_resets_delay_without_play() {
         ChessUITestAccess::seedHistory(ui);
         std::this_thread::sleep_for(550ms);
         ChessUITestAccess::navigate(ui, node);
+        const auto browsed = ChessUITestAccess::position(ui);
+        std::this_thread::sleep_for(550ms);
+        for (int frame = 0; frame < 3; ++frame) ChessUITestAccess::update(ui);
+        require(ChessUITestAccess::browsing(ui) && !ChessUITestAccess::pending(ui) &&
+                !ChessUITestAccess::animating(ui) && ChessUITestAccess::position(ui) == browsed,
+                "history browsing did not pause the engine");
+        ChessUITestAccess::resume(ui);
         const auto selected = ChessUITestAccess::position(ui);
         ChessUITestAccess::update(ui);
         require(!ChessUITestAccess::pending(ui) && !ChessUITestAccess::animating(ui) &&
-                ChessUITestAccess::position(ui) == selected, "history selection skipped its reset delay");
+                ChessUITestAccess::position(ui) == selected, "RESUME skipped its reset delay");
         std::this_thread::sleep_for(550ms);
         ChessUITestAccess::update(ui);
         require(ChessUITestAccess::pending(ui) == (node != 1),
-                "history selection required PLAY or searched a human turn");
+                "RESUME did not continue the engine turn or searched a human turn");
         if (node != 1) {
             consumeResultAndSlide(ui);
             require(ChessUITestAccess::historyParent(ui) == node, "resumed history used the wrong parent");
@@ -641,8 +672,14 @@ void test_history_selection_immediately_clears_failed_search() {
     ChessUITestAccess::navigate(ui, 3);
     require(!ChessUITestAccess::stalled(ui) && !ChessUITestAccess::failed(ui) &&
             ChessUITestAccess::generation(ui) == generation + 1 &&
+            ChessUITestAccess::position(ui) == ChessUITestAccess::beforePosition(ui, 3) &&
+            !ChessUITestAccess::pending(ui),
+            "history selection did not immediately clear both failure flags");
+    ChessUITestAccess::resume(ui);
+    require(!ChessUITestAccess::stalled(ui) && !ChessUITestAccess::failed(ui) &&
+            ChessUITestAccess::generation(ui) == generation + 2 &&
             ChessUITestAccess::position(ui) == selected && !ChessUITestAccess::pending(ui),
-            "same-board history selection did not immediately clear both failure flags");
+            "RESUME to the failed position did not clear both failure flags");
 }
 
 void test_settings_holds_ready_result_until_game_resumes() {
@@ -746,9 +783,9 @@ int main() {
         std::cout << "PASS restart_same_position_discards_old_result\n";
 #ifdef _WIN32
         test_history_navigation_discards_old_result();
-        std::cout << "PASS history_navigation_discards_old_result (same/different board)\n";
-        test_history_selection_resets_delay_without_play();
-        std::cout << "PASS history_selection_resets_delay_without_play\n";
+        std::cout << "PASS history_navigation_discards_old_result\n";
+        test_history_browsing_pauses_until_resume();
+        std::cout << "PASS history_browsing_pauses_until_resume\n";
 #endif
         test_worker_exception_is_handled_on_ui_thread();
         std::cout << "PASS worker_exception_is_handled_on_ui_thread\n";
