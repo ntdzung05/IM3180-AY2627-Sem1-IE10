@@ -15,6 +15,12 @@ add_library(chess_core STATIC
     evaluator.hpp
     engine.cpp
     engine.hpp
+    Engines/NewEvaluator.cpp
+    Engines/NewEvaluator.hpp
+    Engines/SecondEvaluator.cpp
+    Engines/SecondEvaluator.hpp
+    Engines/TacticalEvaluator.cpp
+    Engines/TacticalEvaluator.hpp
     transposition_table.cpp
     transposition_table.hpp
     Engines/AggressiveEvaluator.cpp
