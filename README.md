@@ -76,7 +76,10 @@ default test target uses the new public Board/Engine API.
 ## Architecture
 
 - `Board` owns the authoritative position, turn/action rules, legal move
-  generation, move rollback, terminal state, and position hash.
+  generation, move rollback, terminal state, and position hash. `inboard` and
+  `get_piece` are defined inline in `board.hpp`, so evaluators and the engine
+  pay no call per probed square; move generation reads the grid directly inside
+  `board.cpp`. Reads outside the 8x8 extent still return 0.
 - `Engine` owns one side's search depth, negamax implementation, counters,
   best move, transposition table, and an evaluator object.
 - `Evaluator` owns evaluation logic and any playstyle-specific state. The
@@ -108,8 +111,8 @@ the UI's authoritative position is not modified by search or evaluation.
 It searches completed-turn depths 1 through the requested depth, retaining the
 transposition table between iterations. A matching shallow entry supplies only
 its best-move ordering hint; cached scores and bounds require sufficient depth.
-Node counters include all iterations. The shared engine/UI default depth is 3;
-an explicit depth (including 4) can still be passed to either constructor or search.
+Node counters include all iterations. The shared engine/UI default depth is 4;
+an explicit depth can still be passed to either constructor or search.
 `Engine::set_search_threads(n)` opts into root splitting; `n` includes the caller
 and defaults to 1. The first ordered root move is searched serially, then the
 remaining branches are distributed among bounded participants. Board/evaluator,
@@ -182,7 +185,7 @@ set the default engine side and search depth for code that constructs the UI
 directly:
 
 ```cpp
-ChessUI ui(1, Engine::kDefaultSearchDepth); // default: Black, depth 3
+ChessUI ui(1, Engine::kDefaultSearchDepth); // default: Black, depth 4
 ```
 
 ## Local accounts and match history

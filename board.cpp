@@ -242,10 +242,6 @@ auto Board::cend() const -> std::vector<std::vector<int>>::const_iterator {
     return current_board.cend();
 }
 
-bool Board::inboard(int x, int y) const {
-    return x >= 0 && y >= 0 && x < 8 && y < 8;
-}
-
 bool Board::check_game_ended() {
     if (game_status == 0) return false;
     std::cout << "Game ended\n";
@@ -257,10 +253,6 @@ bool Board::has_game_ended() const { return game_status != 0; }
 int Board::get_current_turn() const { return turn; }
 int Board::get_moves_left() const { return move_left; }
 int Board::get_game_status() const { return game_status; }
-
-int Board::get_piece(int x, int y) const {
-    return inboard(x, y) ? current_board[x][y] : 0;
-}
 
 Hash Board::get_hash() const { return board_hash; }
 

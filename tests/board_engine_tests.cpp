@@ -2092,6 +2092,22 @@ void test_engine_searches_special_moves_without_mutating_root() {
             "engine search mutated the authoritative board on a special move");
 }
 
+void test_piece_reads_are_bounds_guarded() {
+    Board board;
+    BoardTestAccess::empty(board);
+    BoardTestAccess::set_piece(board, 3, 5, 5);
+
+    for (int row = -2; row <= 9; ++row) {
+        for (int column = -2; column <= 9; ++column) {
+            const bool inside = row >= 0 && row < 8 && column >= 0 && column < 8;
+            require(board.inboard(row, column) == inside,
+                    "inboard disagrees with the 8x8 extent");
+            require(board.get_piece(row, column) == ((row == 3 && column == 5) ? 5 : 0),
+                    "get_piece must return the stored piece inside the board and 0 outside it");
+        }
+    }
+}
+
 void test_board_owns_rules_only() {
     Board board;
     require(board.get_current_turn() == 0, "White should move first");
@@ -2957,6 +2973,7 @@ int main() {
         test_killer_ordered_search_matches_independent_minimax();
         test_history_ordered_search_matches_independent_minimax();
         test_quiescence_does_not_consume_or_change_move_ordering_hints();
+        test_piece_reads_are_bounds_guarded();
         test_board_owns_rules_only();
         test_engines_take_turns_on_one_board();
         test_engine_configuration_is_independent();

@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.28)
 project(ChessAI LANGUAGES CXX)
 
+# Single-config generators only: default a bare configure to an optimised build
+# so the engine is not silently -O0. Multi-config generators ignore this and
+# still select the configuration at build time (cmake --build ... --config Release).
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
 option(CHESS_BUILD_GUI "Build the SFML chess application" ON)
 include(CTest)
 

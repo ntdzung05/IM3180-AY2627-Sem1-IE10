@@ -326,13 +326,17 @@ public:
     auto cbegin() const -> std::vector<std::vector<int>>::const_iterator;
     auto cend() const -> std::vector<std::vector<int>>::const_iterator;
 
-    bool inboard(int x, int y) const;
+    bool inboard(int x, int y) const {
+        return x >= 0 && y >= 0 && x < 8 && y < 8;
+    }
     bool check_game_ended();
     bool has_game_ended() const;
     int get_current_turn() const;
     int get_moves_left() const;
     int get_game_status() const;
-    int get_piece(int x, int y) const;
+    int get_piece(int x, int y) const {
+        return inboard(x, y) ? current_board[x][y] : 0;
+    }
     Hash get_hash() const;
     std::uint8_t get_castling_rights() const;
     const Move& get_last_move() const;
