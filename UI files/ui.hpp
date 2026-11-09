@@ -75,15 +75,8 @@ private:
         bool found;
         Move move;
     };
-    struct EvaluationResult {
-        Hash hash;
-        int score;
-        bool cancelled;
-    };
     std::future<SearchResult> searchFuture;
     std::shared_ptr<std::atomic<bool>> searchStop;
-    std::future<EvaluationResult> evaluationFuture;
-    std::shared_ptr<std::atomic<bool>> evaluationStop;
     std::uint64_t positionGeneration = 0;
     std::uint64_t searchGeneration = 0;
     Hash searchRootHash = 0;
@@ -215,9 +208,6 @@ private:
     double evalFrom = 0.0;
     double evalTo = 0.0;
     bool evalStarted = false;
-    Hash evaluationRootHash = 0;
-    Hash depth4EvaluationHash = 0;
-    bool depth4EvaluationValid = false;
     sf::Clock evalClock;
     const float evalSlideSeconds = 0.7f;
     std::string gameAccountName;

@@ -13,8 +13,6 @@
 #include <string>
 
 namespace {
-constexpr int evaluationDepth = 4;
-constexpr int evaluationInfinity = std::numeric_limits<int>::max() / 4;
 constexpr float topPlayX = 740.f;
 constexpr float topPlayWidth = 168.f;
 constexpr float topSettingsX = 908.f;
@@ -26,42 +24,6 @@ constexpr SpecialMove promotionMoves[] = {SpecialMove::PromoteQueen, SpecialMove
 void loadDefaultProfilePicture(sf::Texture& texture, std::string& path) {
     path = "assets/pfp/default_pfp.jpe";
     static_cast<void>(texture.loadFromFile(path));
-}
-
-int searchEvaluation(Board& board, const Evaluator& evaluator, int depth, int alpha, int beta,
-                     const std::atomic<bool>* stop) {
-    if (stop->load(std::memory_order_relaxed)) return 0;
-    if (board.has_game_ended() || (depth <= 0 && board.get_moves_left() == 2))
-        return evaluator.evaluate(board);
-
-    std::vector<Move> moves = board.legal_moves();
-    if (moves.empty()) return evaluator.evaluate(board);
-    std::stable_sort(moves.begin(), moves.end(), [&board](const Move& a, const Move& b) {
-        const int aValue = std::abs(board.get_piece(a.new_x, a.new_y)) * 100 +
-            (a.special_move >= SpecialMove::PromoteQueen ? 1000 : 0);
-        const int bValue = std::abs(board.get_piece(b.new_x, b.new_y)) * 100 +
-            (b.special_move >= SpecialMove::PromoteQueen ? 1000 : 0);
-        return aValue > bValue;
-    });
-
-    int bestScore = -evaluationInfinity;
-    bool foundMove = false;
-    const int turn = board.get_current_turn();
-    for (const Move& move : moves) {
-        if (stop->load(std::memory_order_relaxed)) break;
-        if (!board.make_move(move)) continue;
-        const bool turnChanged = board.get_current_turn() != turn;
-        const int score = turnChanged
-            ? -searchEvaluation(board, evaluator, depth - 1, -beta, -alpha, stop)
-            : searchEvaluation(board, evaluator, depth, alpha, beta, stop);
-        board.rollback_move();
-        if (stop->load(std::memory_order_relaxed)) return 0;
-        bestScore = std::max(bestScore, score);
-        foundMove = true;
-        alpha = std::max(alpha, score);
-        if (alpha >= beta) break;
-    }
-    return foundMove ? bestScore : evaluator.evaluate(board);
 }
 
 }
@@ -94,9 +56,7 @@ engineSearchDepth(searchDepth), startingBoard(game) {
 
 ChessUI::~ChessUI() {
     if (searchStop) searchStop->store(true, std::memory_order_relaxed);
-    if (evaluationStop) evaluationStop->store(true, std::memory_order_relaxed);
     if (searchFuture.valid()) searchFuture.wait();
-    if (evaluationFuture.valid()) evaluationFuture.wait();
 }
 
 void ChessUI::run() {
@@ -1584,8 +1544,7 @@ void ChessUI::drawHowToPlay() {
         "In Player vs Player, take turns using the same board.",
         "Choose 30 seconds, 1 minute, or 2 minutes per move.",
         "Player vs Player shows both clocks; Player vs Engine shows your clock.",
-        "Select a piece and a legal square, or drag it to move.",
-        "Use Flip to turn the board and Settings to change controls and design."
+        "Select a piece and a legal square, or drag it to move."
     };
 
     for (std::size_t i = 0; i < instructions.size(); ++i) {
@@ -1910,8 +1869,6 @@ void ChessUI::drawMatchHistoryScreen() {
 
         drawMoveHistory();
         drawReplayControls();
-        if (showEvaluationBar)
-            drawEvaluationBar();
         return;
     }
 
@@ -2205,63 +2162,21 @@ void ChessUI::closeReplay() {
 }
 
 void ChessUI::updateEvaluationBar() {
-    const bool replaying = currentScreen == Screen::MatchHistory && replayActive;
-    const bool inGame = currentScreen == Screen::Game || currentScreen == Screen::EndGame;
-    if (!replaying && !inGame) {
-        if (evaluationStop) evaluationStop->store(true, std::memory_order_relaxed);
+    const int rawScore = whiteEngine.evaluate(game);
+    const int whiteScore = game.get_current_turn() == 0 ? rawScore : -rawScore;
+    const double pawns = std::clamp(whiteScore / 100.0, -15.0, 15.0);
+
+    if (!evalStarted) {
+        evalStarted = true;
+        evalFrom = evalTo = evalShown = pawns;
+        evalClock.restart();
         return;
     }
 
-    Board& position = replaying ? replayBoard : game;
-    const Hash positionHash = position.get_hash();
-    const bool shouldAnalyze = showEvaluationBar &&
-        (replaying || historyBrowsing || game.has_game_ended() || !engineTurn());
-
-    if (!evalStarted) {
-        evalShown = evalFrom = evalTo = 0.0;
-        evalStarted = true;
+    if (pawns != evalTo) {
+        evalFrom = evalShown;
+        evalTo = pawns;
         evalClock.restart();
-    }
-
-    if (evaluationFuture.valid()) {
-        if (!shouldAnalyze || evaluationRootHash != positionHash)
-            evaluationStop->store(true, std::memory_order_relaxed);
-        if (evaluationFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-            try {
-                const EvaluationResult result = evaluationFuture.get();
-                if (shouldAnalyze && !result.cancelled && result.hash == positionHash) {
-                    const int whiteScore = position.get_current_turn() == 0 ? result.score : -result.score;
-                    const double pawns = std::clamp(whiteScore / 100.0, -15.0, 15.0);
-                    if (pawns != evalTo) {
-                        evalFrom = evalShown;
-                        evalTo = pawns;
-                        evalClock.restart();
-                    }
-                    depth4EvaluationHash = positionHash;
-                    depth4EvaluationValid = true;
-                }
-            }
-            catch (...) {}
-            evaluationStop.reset();
-        }
-    }
-
-    if (shouldAnalyze && !evaluationFuture.valid() &&
-        (!depth4EvaluationValid || depth4EvaluationHash != positionHash)) {
-        try {
-            auto evaluator = whiteEngine.get_evaluator().clone();
-            evaluationStop = std::make_shared<std::atomic<bool>>(false);
-            evaluationRootHash = positionHash;
-            evaluationFuture = std::async(std::launch::async,
-                [snapshot = position, evaluator = std::move(evaluator), stop = evaluationStop, positionHash]() mutable {
-                    const int score = searchEvaluation(snapshot, *evaluator, evaluationDepth,
-                        -evaluationInfinity, evaluationInfinity, stop.get());
-                    return EvaluationResult{positionHash, score, stop->load(std::memory_order_relaxed)};
-                });
-        }
-        catch (...) {
-            evaluationStop.reset();
-        }
     }
 
     const float t = std::clamp(evalClock.getElapsedTime().asSeconds() / evalSlideSeconds, 0.f, 1.f);
@@ -2275,29 +2190,30 @@ void ChessUI::drawEvaluationBar() {
     const float x = static_cast<float>(boardX) - 48.f;
     const float y = static_cast<float>(boardY);
     const double whiteShare = 1.0 / (1.0 + std::exp(-evalShown / 3.0));
-    const float barWidth = 14.f;
-    const float barX = x + (width - barWidth) / 2.f;
 
-    sf::RectangleShape track({barWidth, height});
-    track.setPosition({barX, y});
+    sf::RectangleShape track({width, height});
+    track.setPosition({x, y});
     track.setFillColor(sf::Color(35, 35, 35));
-    track.setOutlineColor(sf::Color(90, 90, 90));
+    track.setOutlineColor(sf::Color(100, 100, 100));
     track.setOutlineThickness(1.f);
     window.draw(track);
 
     const float whiteHeight = static_cast<float>(whiteShare) * height;
-    sf::RectangleShape whiteFill({barWidth - 4.f, whiteHeight});
-    whiteFill.setPosition({barX + 2.f, y + height - whiteHeight});
+    sf::RectangleShape whiteFill({width, whiteHeight});
+    whiteFill.setPosition({x, y + height - whiteHeight});
     whiteFill.setFillColor(sf::Color(235, 235, 235));
     window.draw(whiteFill);
 
-    const Hash displayedHash = currentScreen == Screen::MatchHistory && replayActive
-        ? replayBoard.get_hash() : game.get_hash();
-    sf::Text depthText(font, depth4EvaluationValid && depth4EvaluationHash == displayedHash ? "D4" : "...", 12);
-    const sf::FloatRect depthBounds = depthText.getLocalBounds();
-    depthText.setPosition({x + (width - depthBounds.size.x) / 2.f - depthBounds.position.x, y - 19.f});
-    depthText.setFillColor(sf::Color(210, 210, 210));
-    window.draw(depthText);
+    char buffer[16];
+    std::snprintf(buffer, sizeof(buffer), "%+.1f", evalShown);
+    const bool whiteAhead = whiteShare >= 0.5;
+
+    sf::Text text(font, buffer, 20);
+    text.setFillColor(whiteAhead ? sf::Color(30, 30, 30) : sf::Color(230, 230, 230));
+    const sf::FloatRect bounds = text.getLocalBounds();
+    const float textY = whiteAhead ? y + height - bounds.size.y - 8.f : y + 4.f;
+    text.setPosition({x + (width - bounds.size.x) / 2.f - bounds.position.x, textY - bounds.position.y});
+    window.draw(text);
 }
 
 void ChessUI::openMatchHistory() {
