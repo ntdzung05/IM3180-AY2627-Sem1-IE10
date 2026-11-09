@@ -21,7 +21,8 @@ int main() {
         ui.setMatchHistoryProvider([&](const std::string& username) {
             std::vector<ChessUI::MatchSummary> summaries;
             for (const auto& game : store.games(username))
-                summaries.push_back({game.white, game.black, game.result, game.date, game.mainline});
+                summaries.push_back({game.white, game.black, game.result, game.date,
+                                     game.mainline, game.move_tree});
             return summaries;
         });
         ui.setMatchRecorder([&](const std::string& username, int side,
@@ -32,6 +33,7 @@ int main() {
             game.result = summary.result;
             game.date = summary.date;
             game.mainline = moves;
+            game.move_tree = summary.moveTree;
             store.save_game(username, side, game);
         });
         ui.run();

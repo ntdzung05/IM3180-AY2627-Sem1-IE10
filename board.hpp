@@ -38,6 +38,15 @@ struct Move {
     }
 };
 
+struct MoveTreeNode {
+    Move move;
+    int parent = -1;
+
+    bool operator==(const MoveTreeNode& other) const {
+        return move == other.move && parent == other.parent;
+    }
+};
+
 enum class CastlingRight : std::uint8_t {
     WhiteKingside = 1u << 0,
     WhiteQueenside = 1u << 1,

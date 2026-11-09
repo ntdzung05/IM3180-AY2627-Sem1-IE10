@@ -61,7 +61,13 @@ void test_game_mainline_and_side_persist(const std::filesystem::path& database) 
     require(saved[0].game_id == id && saved[0].player_side == 1 &&
                 saved[0].white == game.white && saved[0].black == game.black &&
                 saved[0].date == game.date && saved[0].result == game.result &&
-                saved[0].mainline == game.mainline, "saved game fields or moves changed");
+                saved[0].mainline == game.mainline &&
+                saved[0].move_tree.size() == game.mainline.size(),
+            "saved game fields, moves, or fallback tree changed");
+    for (std::size_t i = 0; i < saved[0].move_tree.size(); ++i)
+        require(saved[0].move_tree[i].move == game.mainline[i] &&
+                    saved[0].move_tree[i].parent == (i == 0 ? -1 : static_cast<int>(i - 1)),
+                "legacy mainline was not represented as a move tree");
     require(reopened.games("other").empty(), "another player's games leaked");
     Board replay;
     for (const Move& move : saved[0].mainline)
@@ -69,6 +75,44 @@ void test_game_mainline_and_side_persist(const std::filesystem::path& database) 
     require(replay.has_game_ended() &&
                 saved[0].result == (replay.get_game_status() > 0 ? "1-0" : "0-1"),
             "saved mainline did not reproduce the game result");
+}
+
+void test_alternate_branches_persist(const std::filesystem::path& database) {
+    SavedGame game;
+    game.white = "alice";
+    game.black = "Guest";
+    game.result = "1-0";
+    game.date = "branch-tree-round-trip";
+
+    Board start;
+    const auto firstMoves = start.legal_moves();
+    require(firstMoves.size() >= 2, "initial position has no branch choices");
+    const Move mainFirst = firstMoves[0];
+    const Move alternateFirst = firstMoves[1];
+    Board mainBranch;
+    Board alternateBranch;
+    require(mainBranch.make_move(mainFirst) && alternateBranch.make_move(alternateFirst),
+            "branch root move was rejected");
+    const Move mainSecond = mainBranch.legal_moves().front();
+    const Move alternateSecond = alternateBranch.legal_moves().front();
+    require(mainBranch.make_move(mainSecond) && alternateBranch.make_move(alternateSecond),
+            "branch continuation was rejected");
+
+    game.mainline = {mainFirst, mainSecond};
+    game.move_tree = {
+        {mainFirst, -1}, {mainSecond, 0},
+        {alternateFirst, -1}, {alternateSecond, 2}
+    };
+    LocalStore store(database);
+    const auto id = store.save_game("alice", 0, game);
+    const auto saved = store.games("alice");
+    require(saved.size() == 1 && saved.front().game_id == id &&
+                saved.front().mainline == game.mainline && saved.front().move_tree == game.move_tree,
+            "alternate move branches changed during database round-trip");
+    Board replayAlternate;
+    require(replayAlternate.make_move(saved.front().move_tree[2].move) &&
+                replayAlternate.make_move(saved.front().move_tree[3].move),
+            "alternate branch could not be replayed from stored parent links");
 }
 
 std::string query(const std::filesystem::path& database, const char* sql) {
@@ -135,6 +179,7 @@ int main(int argc, char** argv) {
         std::filesystem::remove_all(directory);
         test_accounts_persist(directory / "chess.db");
         test_game_mainline_and_side_persist(directory / "chess.db");
+        test_alternate_branches_persist(directory / "chess.db");
         test_plain_sha256_and_bound_usernames(directory / "chess.db");
         test_failed_association_rolls_back_game(directory / "chess.db");
         test_special_moves_round_trip(directory / "chess.db");
