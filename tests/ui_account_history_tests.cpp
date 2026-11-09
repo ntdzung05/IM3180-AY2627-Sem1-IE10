@@ -44,6 +44,18 @@ struct ChessUITestAccess {
     static const auto& summaries(const ChessUI& ui) { return ui.matchSummaries; }
     static const std::string& history_message(const ChessUI& ui) { return ui.matchHistoryMessage; }
     static const std::string& save_message(const ChessUI& ui) { return ui.matchSaveMessage; }
+    static void build_replay_tree(ChessUI& ui, const ChessUI::MatchSummary& summary) {
+        ui.replayMatch = summary;
+        ui.buildReplayHistoryTree();
+    }
+    static bool has_sibling_branches(const ChessUI& ui) {
+        for (const auto& node : ui.historyTree) {
+            int siblings = 0;
+            for (const auto& candidate : ui.historyTree)
+                if (candidate.parent == node.parent && ++siblings > 1) return true;
+        }
+        return false;
+    }
     static void choose_side(ChessUI& ui) { ui.currentScreen = ChessUI::Screen::ChooseSide; }
     static bool account_screen(const ChessUI& ui) { return ui.currentScreen == ChessUI::Screen::Account; }
     static bool choose_side_screen(const ChessUI& ui) { return ui.currentScreen == ChessUI::Screen::ChooseSide; }
@@ -108,6 +120,7 @@ void test_terminal_branch_saved_once_for_original_account(ChessUI& ui, LocalStor
         game.result = summary.result;
         game.date = summary.date;
         game.mainline = moves;
+        game.move_tree = summary.moveTree;
         store.save_game(owner, side, game);
     });
     ChessUITestAccess::start_pve(ui, 1);
@@ -123,11 +136,20 @@ void test_terminal_branch_saved_once_for_original_account(ChessUI& ui, LocalStor
     ChessUITestAccess::record(ui);
     require(recordings == 1, "same match was saved twice");
     const auto saved = store.games("alice");
-    require(saved.size() == 1 && saved[0].mainline == expected && saved[0].player_side == 0 &&
+    require(saved.size() == 1 && saved[0].mainline == expected &&
+                saved[0].move_tree.size() == ChessUITestAccess::tree_size(ui) &&
+                saved[0].player_side == 0 &&
                 saved[0].white == "alice" && saved[0].black == "Engine" && !saved[0].date.empty(),
-            "saved history includes another branch or has the wrong player association");
+            "saved history did not retain all branches or has the wrong player association");
     require(ChessUITestAccess::tree_size(ui) > expected.size() && store.games("bob").empty(),
             "fixture did not branch or account switch reassigned the match");
+    ChessUI::MatchSummary replay;
+    replay.mainline = saved[0].mainline;
+    replay.moveTree = saved[0].move_tree;
+    ChessUITestAccess::build_replay_tree(ui, replay);
+    require(ChessUITestAccess::tree_size(ui) == saved[0].move_tree.size() &&
+                ChessUITestAccess::has_sibling_branches(ui),
+            "saved alternate branches did not rebuild in the replay tree");
     ChessUITestAccess::identity(ui, "alice");
 }
 
@@ -135,7 +157,8 @@ void test_history_provider_receives_current_account(ChessUI& ui, LocalStore& sto
     ui.setMatchHistoryProvider([&](const std::string& username) {
         std::vector<ChessUI::MatchSummary> summaries;
         for (const auto& game : store.games(username))
-            summaries.push_back({game.white, game.black, game.result, game.date});
+            summaries.push_back({game.white, game.black, game.result, game.date,
+                                 game.mainline, game.move_tree});
         return summaries;
     });
     ChessUITestAccess::open_history(ui);
@@ -198,12 +221,14 @@ void test_save_failure_retries_without_duplicate_game(ChessUI& ui, LocalStore& s
         game.result = summary.result;
         game.date = summary.date;
         game.mainline = moves;
+        game.move_tree = summary.moveTree;
         store.save_game(owner, side, game);
     });
     ui.setMatchHistoryProvider([&](const std::string& username) {
         std::vector<ChessUI::MatchSummary> summaries;
         for (const auto& game : store.games(username))
-            summaries.push_back({game.white, game.black, game.result, game.date});
+            summaries.push_back({game.white, game.black, game.result, game.date,
+                                 game.mainline, game.move_tree});
         return summaries;
     });
     ChessUITestAccess::start_pve(ui, 1);

@@ -15,6 +15,7 @@ struct SavedGame {
     std::string result;
     std::string date;
     std::vector<Move> mainline;
+    std::vector<MoveTreeNode> move_tree;
 };
 
 class LocalStore {

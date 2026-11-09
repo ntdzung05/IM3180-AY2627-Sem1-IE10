@@ -40,6 +40,7 @@ public:
         std::string result;
         std::string date;
         std::vector<Move> mainline;
+        std::vector<MoveTreeNode> moveTree;
     };
 
     using AuthHandler = std::function<bool(
@@ -80,9 +81,12 @@ private:
     std::uint64_t searchGeneration = 0;
     Hash searchRootHash = 0;
     int engineSide = 0;
+    int selectedPlayerSide = 0;
+    int boardBottomSide = 0;
+    bool selectedPlayerVsPlayer = false;
     sf::RenderWindow window;
 
-    enum class Screen { StartScreen, ChooseSide, Game, Promotion, Settings, EndGame, Account, MatchHistory };
+    enum class Screen { StartScreen, MainMenu, HowToPlay, ChooseSide, Game, Promotion, Settings, EndGame, Account, MatchHistory };
 
     enum class PlayerMoveMode { Slide, Drag, PointAndClick };
 
@@ -107,12 +111,13 @@ private:
 
     Screen currentScreen = Screen::StartScreen;
     Screen previousScreen = Screen::Game;
-    Screen accountReturnScreen = Screen::ChooseSide;
+    Screen accountReturnScreen = Screen::StartScreen;
     Screen matchHistoryReturnScreen = Screen::Account;
     HistoryStyle historyStyle = HistoryStyle::Pictogram;
 
     sf::Clock engineMoveClock;
     sf::Clock engineAnimationClock;
+    sf::Clock engineSpinClock;
     bool engineMoveWaiting = false;
     bool engineMoveAnimating = false;
     int animatedFromRow = -1;
@@ -126,7 +131,7 @@ private:
     const float engineMoveDelaySeconds = 0.5f;
     const float engineSlideSeconds = 0.3f;
 
-    const float matchSeconds = 120.f;
+    float matchSeconds = 120.f;
     float moveTimeLeft = 120.f;
     int clockKeyNode = -2;
     int clockKeyTurn = -1;
@@ -137,8 +142,8 @@ private:
     bool clockStarted = false;
     void updateClocks();
     void drawClocks();
+    void drawEngineKing();
 
-    bool historyPreviewHeld = false;
     bool historyBrowsing = false;
     bool forceNewBranch = false;
 
@@ -152,7 +157,7 @@ private:
     std::vector<HistoryNode> historyTree;
     int currentHistoryNode = -1;
     int viewingHistoryNode = -1;
-    int hoveredHistoryNode = -1;
+    int historyPreviewNode = -2;
     float historyHorizontalScroll = 0.f;
     bool historyHorizontalScrollbarDragging = false;
     float historyHorizontalScrollbarGrabOffset = 0.f;
@@ -189,7 +194,16 @@ private:
     bool replayActive = false;
     MatchSummary replayMatch;
     int replayMoveIndex = -1;
+    int replayHistoryNode = -1;
+    std::vector<int> replayMainlineNodes;
     Board replayBoard;
+    std::vector<HistoryNode> historyTreeBeforeReplay;
+    int historyNodeBeforeReplay = -1;
+    int viewingNodeBeforeReplay = -1;
+    int historyPreviewBeforeReplay = -2;
+    float historyScrollBeforeReplay = 0.f;
+    float historyHorizontalScrollBeforeReplay = 0.f;
+    bool replayHistoryStateSaved = false;
     double evalShown = 0.0;
     double evalFrom = 0.0;
     double evalTo = 0.0;
@@ -212,8 +226,8 @@ private:
     sf::Texture whiteTileTexture;
     sf::Texture blackTileTexture;
 
-    sf::Texture selectionFrameTexture;
     sf::Texture startBackgroundTexture;
+    sf::Texture selectionFrameTexture;
     sf::Clock selectionFrameClock;
     int selectionFrame = 1;
     const int selectionFrameCount = 96;
@@ -254,7 +268,6 @@ private:
     const int sidePanelWidth = 400;
     const int sidePanelHeight = 640;
 
-    void drawHistoryPreview();
     void drawMoveHistory();
     void drawLegalMoves();
     void loadPieceTextures();
@@ -275,6 +288,9 @@ private:
                          sf::Color fill = sf::Color(65, 65, 65));
     void drawReplayControls();
     void stepReplay(int delta);
+    void buildReplayHistoryTree();
+    void selectReplayHistoryNode(int nodeIndex);
+    void closeReplay();
     void updateEvaluationBar();
     void drawEvaluationBar();
     void submitAccountForm();
@@ -286,9 +302,9 @@ private:
     void drawBoard();
     void drawSidePanel();
     void drawText();
-    void updateSelectionVideo();
     void drawStartScreen();
-    void drawChooseSide();
+    void drawMainMenu();
+    void drawHowToPlay();
     void drawSettings();
     void drawGameplaySettings();
     void drawDesignSettings();
@@ -300,6 +316,8 @@ private:
     void refreshBoardThemes();
     void loadBoardTextures();
     void drawCoverTexture(const sf::Texture& texture);
+    void drawSelectionFrameBackground();
+    void updateSelectionVideo();
     bool isBoardFlipped() const;
     int displayRow(int row) const;
     int displayCol(int col) const;
